@@ -79,14 +79,16 @@ production can be rolled back to an exact source revision.
 ## In-app update notice
 
 Custom production builds use `BuildType=custom`. Their dashboard's **Update
-now** button never downloads `Wei-Shaw/sub2api`. It starts the root-owned,
-parameterless `sub2api-custom-update` helper instead. That helper accepts no
+now** button never downloads `Wei-Shaw/sub2api`. It writes one fixed request
+marker that a root-owned systemd path unit watches; the unit starts the
+parameterless `sub2api-custom-update` helper. The web process has
+`NoNewPrivileges=true` and receives no sudo access. The helper accepts no
 user-supplied URL or version; it downloads only the latest checked custom
 release from `pincman/sub2api`, verifies its checksum, creates a complete ZIP
 backup, atomically deploys the binary, and verifies health, homepage, schema,
 and upgrade-route checks before reporting success.
 
-The helper requires the narrowly-scoped sudo/systemd setup installed by the
+The helper requires the systemd `.path` and `.service` units installed by the
 production deployment procedure. Rollback remains intentionally manual through
 the verified full-backup restore script, because it restores database and
 configuration state together with the binary.
