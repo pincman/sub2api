@@ -130,7 +130,7 @@ func TestBuildSubscriptionUpgradeQuoteRejectsLowerQuotaTarget(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestLoadSubscriptionUpgradeQuoteUsesOriginalPurchasePrice(t *testing.T) {
+func TestLoadSubscriptionUpgradeQuoteUsesGroupMonthlyPlanForManualAssignment(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
 	user := createSubscriptionUpgradeTestUser(t, client)
@@ -146,11 +146,23 @@ func TestLoadSubscriptionUpgradeQuoteUsesOriginalPurchasePrice(t *testing.T) {
 		SetSubscriptionType(SubscriptionTypeSubscription).
 		SetMonthlyLimitUsd(3200).
 		SaveX(ctx)
-	sourcePlan := client.SubscriptionPlan.Create().
+	client.SubscriptionPlan.Create().
 		SetGroupID(sourceGroup.ID).
-		SetName("source-current-price").
-		SetPrice(400).
+		SetName("source-quarterly").
+		SetPrice(1050).
 		SetCurrency("CNY").
+		SetValidityDays(90).
+		SetValidityUnit("day").
+		SetForSale(true).
+		SaveX(ctx)
+	sourceMonthlyPlan := client.SubscriptionPlan.Create().
+		SetGroupID(sourceGroup.ID).
+		SetName("source-monthly").
+		SetPrice(350).
+		SetCurrency("CNY").
+		SetValidityDays(30).
+		SetValidityUnit("day").
+		SetForSale(true).
 		SaveX(ctx)
 	targetPlan := client.SubscriptionPlan.Create().
 		SetGroupID(targetGroup.ID).
@@ -159,6 +171,16 @@ func TestLoadSubscriptionUpgradeQuoteUsesOriginalPurchasePrice(t *testing.T) {
 		SetCurrency("CNY").
 		SetValidityDays(30).
 		SetValidityUnit("day").
+		SetForSale(true).
+		SaveX(ctx)
+	targetQuarterlyPlan := client.SubscriptionPlan.Create().
+		SetGroupID(targetGroup.ID).
+		SetName("target-quarterly").
+		SetPrice(2100).
+		SetCurrency("CNY").
+		SetValidityDays(90).
+		SetValidityUnit("day").
+		SetForSale(true).
 		SaveX(ctx)
 	windowStart := time.Now().Add(-time.Hour)
 	sourceSubscription := client.UserSubscription.Create().
@@ -170,16 +192,6 @@ func TestLoadSubscriptionUpgradeQuoteUsesOriginalPurchasePrice(t *testing.T) {
 		SetMonthlyWindowStart(windowStart).
 		SetMonthlyUsageUsd(800).
 		SaveX(ctx)
-	completedAt := time.Now().Add(-time.Minute)
-	createSubscriptionUpgradeTestOrder(t, client, user, func(order *dbent.PaymentOrderCreate) {
-		order.SetAmount(350).
-			SetPayAmount(350).
-			SetPlanID(sourcePlan.ID).
-			SetSubscriptionGroupID(sourceGroup.ID).
-			SetSubscriptionDays(30).
-			SetCompletedAt(completedAt)
-	})
-
 	svc := &PaymentService{
 		entClient: client,
 		groupRepo: &subscriptionUpgradeGroupRepoStub{groups: map[int64]*Group{
@@ -190,9 +202,13 @@ func TestLoadSubscriptionUpgradeQuoteUsesOriginalPurchasePrice(t *testing.T) {
 	quote, _, err := svc.loadSubscriptionUpgradeQuote(ctx, client, user.ID, sourceSubscription.ID, targetPlan.ID, false)
 
 	require.NoError(t, err)
-	require.Equal(t, 350.0, quote.SourcePrice, "credit must use the amount originally purchased, not the edited plan price")
+	require.Equal(t, int64(sourceMonthlyPlan.ID), quote.SourcePlanID)
+	require.Equal(t, 350.0, quote.SourcePrice, "gifted subscriptions use the group's monthly baseline plan")
 	require.Equal(t, 175.0, quote.CreditAmount)
 	require.Equal(t, 525.0, quote.UpgradeAmount)
+
+	_, _, err = svc.loadSubscriptionUpgradeQuote(ctx, client, user.ID, sourceSubscription.ID, targetQuarterlyPlan.ID, false)
+	require.Error(t, err, "upgrades must only quote the target group's monthly baseline plan")
 }
 
 func TestApplySubscriptionUpgradeResetsExpiredTargetAndIsIdempotent(t *testing.T) {

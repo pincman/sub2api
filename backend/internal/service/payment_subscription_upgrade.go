@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -68,89 +70,42 @@ func effectiveMonthlyUsage(sub *dbent.UserSubscription, now time.Time) float64 {
 	return math.Max(0, sub.MonthlyUsageUsd)
 }
 
-type subscriptionUpgradeSourcePurchase struct {
-	plan          *dbent.SubscriptionPlan
-	quotaOverride *float64
-}
+// canonicalSubscriptionPlanForGroup resolves a subscription's commercial
+// baseline from its group, not from a historical payment order. This makes
+// gifted and purchased subscriptions behave identically: the shortest active
+// term in the group (normally its monthly plan) defines the value of one
+// monthly quota window.
+func (s *PaymentService) canonicalSubscriptionPlanForGroup(ctx context.Context, client *dbent.Client, groupID int64) (*dbent.SubscriptionPlan, error) {
+	plans, err := client.SubscriptionPlan.Query().
+		Where(subscriptionplan.GroupIDEQ(groupID)).
+		All(ctx)
+	if err != nil || len(plans) == 0 {
+		return nil, infraerrors.BadRequest("UPGRADE_SOURCE_PLAN_NOT_FOUND", "the source subscription group has no plan for calculating an upgrade")
+	}
 
-func upgradeSnapshotFloat(snapshot map[string]any, key string) (float64, bool) {
-	value, ok := snapshot[key]
-	if !ok {
-		return 0, false
-	}
-	switch typed := value.(type) {
-	case float64:
-		return typed, math.IsNaN(typed) == false && math.IsInf(typed, 0) == false
-	case float32:
-		result := float64(typed)
-		return result, math.IsNaN(result) == false && math.IsInf(result, 0) == false
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case json.Number:
-		result, err := typed.Float64()
-		return result, err == nil
-	default:
-		return 0, false
-	}
-}
-
-func upgradeSnapshotString(snapshot map[string]any, key string) (string, bool) {
-	value, ok := snapshot[key].(string)
-	value = strings.TrimSpace(value)
-	return value, ok && value != ""
-}
-
-// latestSubscriptionPurchaseForGroup resolves the immutable commercial value
-// of the subscription the user actually bought. A plan may be edited after a
-// sale, so using the plan's current price would silently change upgrade credit.
-// Chained upgrades use the previous upgrade snapshot's full target value, not
-// the difference that was paid for that upgrade.
-func (s *PaymentService) latestSubscriptionPurchaseForGroup(ctx context.Context, client *dbent.Client, userID, groupID int64) (*subscriptionUpgradeSourcePurchase, error) {
-	order, err := client.PaymentOrder.Query().
-		Where(
-			paymentorder.UserIDEQ(userID),
-			paymentorder.SubscriptionGroupIDEQ(groupID),
-			paymentorder.PlanIDNotNil(),
-			paymentorder.StatusEQ(OrderStatusCompleted),
-			paymentorder.OrderTypeIn(payment.OrderTypeSubscription, payment.OrderTypeSubscriptionUpgrade),
-		).
-		Order(dbent.Desc(paymentorder.FieldCompletedAt), dbent.Desc(paymentorder.FieldID)).
-		First(ctx)
-	if err != nil || order.PlanID == nil {
-		return nil, infraerrors.BadRequest("UPGRADE_SOURCE_PLAN_NOT_FOUND", "the active subscription was not created by a purchasable plan")
-	}
-	plan, err := client.SubscriptionPlan.Get(ctx, *order.PlanID)
-	if err != nil {
-		return nil, infraerrors.BadRequest("UPGRADE_SOURCE_PLAN_NOT_FOUND", "the source subscription plan no longer exists")
-	}
-	planCopy := *plan
-	result := &subscriptionUpgradeSourcePurchase{plan: &planCopy}
-	if order.OrderType == payment.OrderTypeSubscriptionUpgrade {
-		if price, ok := upgradeSnapshotFloat(order.UpgradeSnapshot, "target_price"); ok && price > 0 {
-			result.plan.Price = price
+	forSale := make([]*dbent.SubscriptionPlan, 0, len(plans))
+	for _, plan := range plans {
+		if plan.ForSale {
+			forSale = append(forSale, plan)
 		}
-		if quota, ok := upgradeSnapshotFloat(order.UpgradeSnapshot, "target_quota"); ok && quota > 0 {
-			result.quotaOverride = &quota
-		}
-		if currency, ok := upgradeSnapshotString(order.UpgradeSnapshot, "currency"); ok {
-			result.plan.Currency = currency
-		}
-	} else if order.Amount > 0 {
-		result.plan.Price = order.Amount
 	}
-	return result, nil
-}
+	if len(forSale) > 0 {
+		plans = forSale
+	}
 
-func sourceGroupWithPurchasedQuota(group *Group, quotaOverride *float64) *Group {
-	if group == nil || quotaOverride == nil || *quotaOverride <= 0 {
-		return group
-	}
-	copy := *group
-	quota := *quotaOverride
-	copy.MonthlyLimitUSD = &quota
-	return &copy
+	sort.SliceStable(plans, func(i, j int) bool {
+		iDays := psComputeValidityDays(plans[i].ValidityDays, plans[i].ValidityUnit)
+		jDays := psComputeValidityDays(plans[j].ValidityDays, plans[j].ValidityUnit)
+		if iDays != jDays {
+			return iDays < jDays
+		}
+		if plans[i].Price != plans[j].Price {
+			return plans[i].Price < plans[j].Price
+		}
+		return plans[i].ID < plans[j].ID
+	})
+
+	return plans[0], nil
 }
 
 func targetSubscriptionBlocksUpgrade(sub *dbent.UserSubscription, now time.Time) bool {
@@ -234,20 +189,25 @@ func (s *PaymentService) loadSubscriptionUpgradeQuote(ctx context.Context, clien
 	if err != nil {
 		return nil, nil, infraerrors.BadRequest("UPGRADE_SOURCE_UNAVAILABLE", "source subscription is not active or is already locked for upgrade")
 	}
-	sourcePurchase, err := s.latestSubscriptionPurchaseForGroup(ctx, client, userID, sub.GroupID)
+	sourcePlan, err := s.canonicalSubscriptionPlanForGroup(ctx, client, sub.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}
-	sourcePlan := sourcePurchase.plan
 	targetPlan, err := client.SubscriptionPlan.Get(ctx, targetPlanID)
 	if err != nil || !targetPlan.ForSale {
 		return nil, nil, infraerrors.NotFound("PLAN_NOT_AVAILABLE", "target plan not found or not for sale")
+	}
+	canonicalTargetPlan, err := s.canonicalSubscriptionPlanForGroup(ctx, client, targetPlan.GroupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if canonicalTargetPlan.ID != targetPlan.ID {
+		return nil, nil, infraerrors.BadRequest("UPGRADE_TARGET_TERM_INVALID", "target plan must be the group's monthly baseline plan")
 	}
 	sourceGroup, err := s.groupRepo.GetByID(ctx, sub.GroupID)
 	if err != nil {
 		return nil, nil, infraerrors.BadRequest("UPGRADE_SOURCE_GROUP_NOT_FOUND", "source subscription group no longer exists")
 	}
-	sourceGroup = sourceGroupWithPurchasedQuota(sourceGroup, sourcePurchase.quotaOverride)
 	targetGroup, err := s.groupRepo.GetByID(ctx, targetPlan.GroupID)
 	if err != nil {
 		return nil, nil, infraerrors.BadRequest("UPGRADE_TARGET_GROUP_NOT_FOUND", "target subscription group no longer exists")
@@ -280,23 +240,34 @@ func (s *PaymentService) GetSubscriptionUpgradeOptions(ctx context.Context, user
 	if err != nil {
 		return nil, infraerrors.NotFound("UPGRADE_SOURCE_UNAVAILABLE", "active source subscription not found")
 	}
-	sourcePurchase, err := s.latestSubscriptionPurchaseForGroup(ctx, s.entClient, userID, sub.GroupID)
+	sourcePlan, err := s.canonicalSubscriptionPlanForGroup(ctx, s.entClient, sub.GroupID)
 	if err != nil {
 		return nil, err
 	}
-	sourcePlan := sourcePurchase.plan
 	sourceGroup, err := s.groupRepo.GetByID(ctx, sub.GroupID)
 	if err != nil {
 		return nil, err
 	}
-	sourceGroup = sourceGroupWithPurchasedQuota(sourceGroup, sourcePurchase.quotaOverride)
 	plans, err := s.configService.ListPlansForSale(ctx)
 	if err != nil {
 		return nil, err
 	}
 	quotes := make([]*SubscriptionUpgradeQuote, 0)
+	canonicalTargets := make(map[int64]int64)
 	for _, targetPlan := range plans {
 		if targetPlan.GroupID == sub.GroupID || targetPlan.Price <= sourcePlan.Price {
+			continue
+		}
+		canonicalTargetID, ok := canonicalTargets[targetPlan.GroupID]
+		if !ok {
+			canonicalTarget, canonicalErr := s.canonicalSubscriptionPlanForGroup(ctx, s.entClient, targetPlan.GroupID)
+			if canonicalErr != nil {
+				continue
+			}
+			canonicalTargetID = canonicalTarget.ID
+			canonicalTargets[targetPlan.GroupID] = canonicalTargetID
+		}
+		if targetPlan.ID != canonicalTargetID {
 			continue
 		}
 		existingTarget, checkErr := s.entClient.UserSubscription.Query().Where(

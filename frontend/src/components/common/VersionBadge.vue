@@ -286,7 +286,7 @@
                     />
                   </svg>
                   <p class="text-xs text-blue-600 dark:text-blue-400">
-                    {{ t('version.sourceModeHint') }}
+                    {{ isCustomBuild ? t('version.customModeHint') : t('version.sourceModeHint') }}
                   </p>
                 </div>
               </div>
@@ -730,6 +730,7 @@ const activeManualCommand = computed(() =>
 
 // Only show update check for release builds (binary/docker deployment)
 const isReleaseBuild = computed(() => buildType.value === 'release')
+const isCustomBuild = computed(() => buildType.value === 'custom')
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
