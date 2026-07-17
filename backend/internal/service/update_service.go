@@ -8,11 +8,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -23,15 +26,17 @@ import (
 )
 
 var (
-	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
-	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
-	ErrCustomBuildUpdateDisabled = infraerrors.Conflict("CUSTOM_BUILD_UPDATE_DISABLED", "built-in updates are disabled for this custom build; merge the upstream release into the fork and deploy the custom binary")
+	ErrNoUpdateAvailable           = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
+	ErrRollbackVersionNotAllowed   = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	ErrCustomBuildUpdateDisabled   = infraerrors.Conflict("CUSTOM_BUILD_UPDATE_DISABLED", "rollback from an official release is disabled for this custom build; use the verified custom backup instead")
+	ErrCustomBuildUpdateDispatched = errors.New("custom build update dispatched")
 )
 
 const (
-	updateCacheKey = "update_check_cache"
-	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	updateCacheKey     = "update_check_cache"
+	updateCacheTTL     = 1200 // 20 minutes
+	upstreamGitHubRepo = "Wei-Shaw/sub2api"
+	customGitHubRepo   = "pincman/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -45,6 +50,8 @@ const (
 	// Fetch a few extra releases so filtering (current/newer/prerelease) still leaves enough candidates
 	rollbackFetchPageSize = 15
 )
+
+var semverPrefixPattern = regexp.MustCompile(`^(?:custom-)?v?(\d+)\.(\d+)\.(\d+)`)
 
 // UpdateCache defines cache operations for update service
 type UpdateCache interface {
@@ -60,21 +67,56 @@ type GitHubReleaseClient interface {
 	FetchChecksumFile(ctx context.Context, url string) ([]byte, error)
 }
 
+// CustomUpdateDispatcher starts the root-owned custom update helper. The
+// helper is deliberately parameterless: it can only download the verified
+// latest release from this fork, create a complete backup, and run the
+// deployment health checks. The web process never receives root privileges.
+type CustomUpdateDispatcher interface {
+	Dispatch(ctx context.Context) error
+}
+
+type systemdCustomUpdateDispatcher struct{}
+
+func (systemdCustomUpdateDispatcher) Dispatch(ctx context.Context) error {
+	output, err := exec.CommandContext(
+		ctx,
+		"/usr/bin/sudo",
+		"-n",
+		"/usr/bin/systemd-run",
+		"--no-block",
+		"--collect",
+		"--unit=sub2api-custom-update",
+		"/usr/local/sbin/sub2api-custom-update",
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("start verified custom update helper: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 // UpdateService handles software updates
 type UpdateService struct {
-	cache          UpdateCache
-	githubClient   GitHubReleaseClient
-	currentVersion string
-	buildType      string // "source" for manual builds, "release" for CI builds
+	cache                  UpdateCache
+	githubClient           GitHubReleaseClient
+	currentVersion         string
+	buildType              string // "source" for manual builds, "release" for CI builds
+	releaseRepo            string
+	customUpdateDispatcher CustomUpdateDispatcher
 }
 
 // NewUpdateService creates a new UpdateService
 func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType string) *UpdateService {
+	releaseRepo := upstreamGitHubRepo
+	if strings.EqualFold(strings.TrimSpace(buildType), "custom") {
+		releaseRepo = customGitHubRepo
+	}
 	return &UpdateService{
-		cache:          cache,
-		githubClient:   githubClient,
-		currentVersion: version,
-		buildType:      buildType,
+		cache:                  cache,
+		githubClient:           githubClient,
+		currentVersion:         version,
+		buildType:              buildType,
+		releaseRepo:            releaseRepo,
+		customUpdateDispatcher: systemdCustomUpdateDispatcher{},
 	}
 }
 
@@ -165,7 +207,13 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 	if s.isCustomBuild() {
-		return ErrCustomBuildUpdateDisabled
+		if s.customUpdateDispatcher == nil {
+			return fmt.Errorf("custom update helper is not configured")
+		}
+		if err := s.customUpdateDispatcher.Dispatch(ctx); err != nil {
+			return err
+		}
+		return ErrCustomBuildUpdateDispatched
 	}
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
@@ -377,7 +425,7 @@ func (s *UpdateService) isCustomBuild() bool {
 // fetchRollbackCandidates fetches recent releases and keeps the newest
 // maxRollbackVersions entries strictly older than the current version.
 func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
-	releases, err := s.githubClient.FetchRecentReleases(ctx, githubRepo, rollbackFetchPageSize)
+	releases, err := s.githubClient.FetchRecentReleases(ctx, s.releaseRepo, rollbackFetchPageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +462,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
-	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
+	release, err := s.githubClient.FetchLatestRelease(ctx, s.releaseRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -664,20 +712,32 @@ func compareVersions(current, latest string) int {
 			return 1
 		}
 	}
+	// Custom releases carry the upstream version plus the tested custom commit.
+	// A manually deployed custom build without that suffix must adopt the first
+	// matching fork release, and later custom commits on the same upstream base
+	// must remain installable as well.
+	if isCustomReleaseVersion(latest) && strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v") {
+		return -1
+	}
 	return 0
 }
 
+func isCustomReleaseVersion(v string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(v)), "-custom.")
+}
+
 func parseVersion(v string) [3]int {
-	v = strings.TrimPrefix(v, "v")
-	if idx := strings.IndexByte(v, '-'); idx != -1 {
-		v = v[:idx]
-	}
-	parts := strings.Split(v, ".")
 	result := [3]int{0, 0, 0}
-	for i := 0; i < len(parts) && i < 3; i++ {
-		if parsed, err := strconv.Atoi(parts[i]); err == nil {
-			result[i] = parsed
+	match := semverPrefixPattern.FindStringSubmatch(strings.TrimSpace(v))
+	if len(match) != 4 {
+		return result
+	}
+	for i := 0; i < 3; i++ {
+		parsed, err := strconv.Atoi(match[i+1])
+		if err != nil {
+			return [3]int{0, 0, 0}
 		}
+		result[i] = parsed
 	}
 	return result
 }

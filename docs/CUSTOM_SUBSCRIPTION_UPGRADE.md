@@ -26,23 +26,21 @@ and the group's monthly quota is the quota baseline. Therefore a gifted,
 admin-assigned, redeemed, or directly purchased subscription receives exactly
 the same upgrade quote when it belongs to the same group and has the same usage.
 
-## Merge an upstream release
+## Automated upstream release flow
 
-Work from a clean tree and preserve both remotes:
+`.github/workflows/sync-custom-release.yml` runs whenever the custom branch is
+pushed and once per hour. It fetches the newest stable `Wei-Shaw/sub2api` tag.
+When that tag is not already included, it merges it into
+`custom/subscription-upgrade`, runs the frontend and backend tests, builds an
+embedded Linux binary with `BuildType=custom`, and publishes an immutable
+release in `pincman/sub2api`.
 
-```bash
-git remote -v
-git fetch origin --prune
-git fetch upstream --tags --prune
-git switch custom/subscription-upgrade
-git pull --ff-only origin custom/subscription-upgrade
-git merge --no-ff upstream/main
-```
+If Git cannot merge cleanly or any test/build step fails, nothing is pushed or
+released. Production keeps using its existing custom binary. A maintainer only
+needs to resolve that conflict on the custom branch; the next workflow run
+resumes the normal release process.
 
-If the upstream default branch is not `main`, replace `upstream/main` with the
-branch shown by `git remote show upstream`.
-
-When resolving conflicts, preserve the behavior and schema documented here.
+When resolving a conflict, preserve the behavior and schema documented here.
 The primary custom files are:
 
 - `backend/migrations/182_subscription_upgrades.sql`
@@ -75,22 +73,23 @@ go test ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embed -trimpath -o /tmp/sub2api-linux-amd64 ./cmd/server
 ```
 
-Commit the merge to the custom branch and push it to `origin`. Tag each deployed
-commit (for example `custom-prod-YYYYMMDD-HHMM`) so production can be rolled
-back to an exact source revision.
+Tag each manually deployed commit (for example `custom-prod-YYYYMMDD-HHMM`) so
+production can be rolled back to an exact source revision.
 
 ## In-app update notice
 
-The upstream dashboard's **Update now** action downloads an official
-`Wei-Shaw/sub2api` release and replaces `/opt/sub2api/sub2api`. It must never
-be used on this fork because it cannot contain the custom upgrade code.
+Custom production builds use `BuildType=custom`. Their dashboard's **Update
+now** button never downloads `Wei-Shaw/sub2api`. It starts the root-owned,
+parameterless `sub2api-custom-update` helper instead. That helper accepts no
+user-supplied URL or version; it downloads only the latest checked custom
+release from `pincman/sub2api`, verifies its checksum, creates a complete ZIP
+backup, atomically deploys the binary, and verifies health, homepage, schema,
+and upgrade-route checks before reporting success.
 
-Custom production builds use `BuildType=custom`. They continue to show that an
-upstream release exists and link to its changelog, but the binary update and
-rollback API actions are blocked. To take an upstream release, use the merge
-workflow above, test the merged fork, create the required full backup, and
-deploy the resulting custom embedded binary with
-`tools/production-backup/deploy-custom-binary.sh`.
+The helper requires the narrowly-scoped sudo/systemd setup installed by the
+production deployment procedure. Rollback remains intentionally manual through
+the verified full-backup restore script, because it restores database and
+configuration state together with the binary.
 
 ## Production rule
 
