@@ -381,6 +381,7 @@ export default {
     rechargeAccount: 'Recharge Account',
     activeSubscription: 'Active Subscription',
     upgradeNow: 'Upgrade',
+    upgradePlan: 'Upgrade Plan',
     selectUpgradePlan: 'Select Upgrade Plan',
     noUpgradePlans: 'No upgrade plan is currently available',
     upgradeCalculationHint: 'Unused monthly quota is converted into credit. The upgraded plan starts with a fresh quota and term.',

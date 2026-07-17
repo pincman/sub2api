@@ -232,7 +232,7 @@
                         type="button"
                         class="rounded-lg border border-primary-200 px-2.5 py-1 text-[11px] font-semibold text-primary-600 transition hover:bg-primary-50 disabled:opacity-50 dark:border-primary-800 dark:text-primary-400 dark:hover:bg-primary-950/30"
                         :disabled="upgradeLoadingSubscriptionId === sub.id"
-                        @click="openUpgradeModal(sub)"
+                        @click="openUpgradeModal(sub.id)"
                       >
                         {{ upgradeLoadingSubscriptionId === sub.id ? t('common.loading') : t('payment.upgradeNow') }}
                       </button>
@@ -334,7 +334,6 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiErro
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
 import type { SubscriptionPlan, SubscriptionUpgradeQuote, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
-import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -840,12 +839,12 @@ function cancelSelectedPlan() {
   selectedUpgradeQuote.value = null
 }
 
-async function openUpgradeModal(sub: UserSubscription) {
+async function openUpgradeModal(subscriptionId: number) {
   if (upgradeLoadingSubscriptionId.value !== null) return
-  upgradeLoadingSubscriptionId.value = sub.id
+  upgradeLoadingSubscriptionId.value = subscriptionId
   errorMessage.value = ''
   try {
-    const response = await paymentAPI.getSubscriptionUpgradeOptions(sub.id)
+    const response = await paymentAPI.getSubscriptionUpgradeOptions(subscriptionId)
     upgradeQuotes.value = response.data || []
     showUpgradeModal.value = true
   } catch (err: unknown) {
@@ -1289,6 +1288,12 @@ onMounted(async () => {
     // Handle renewal navigation: ?tab=subscription&group=123
     if (route.query.tab === 'subscription') {
       activeTab.value = 'subscription'
+      const upgradeSubscriptionID = typeof route.query.upgrade === 'string'
+        ? Number(route.query.upgrade)
+        : 0
+      if (Number.isSafeInteger(upgradeSubscriptionID) && upgradeSubscriptionID > 0) {
+        await openUpgradeModal(upgradeSubscriptionID)
+      }
       if (route.query.group) {
         const groupId = Number(route.query.group)
         const groupPlans = checkout.value.plans.filter(p => p.group_id === groupId)

@@ -405,6 +405,7 @@ export default {
     rechargeAccount: '充值账户',
     activeSubscription: '当前订阅',
     upgradeNow: '升级',
+    upgradePlan: '升级套餐',
     selectUpgradePlan: '选择升级套餐',
     noUpgradePlans: '当前没有可升级的套餐',
     upgradeCalculationHint: '旧套餐剩余价值按未使用月额度比例抵扣，升级后额度和有效期重新计算。',
