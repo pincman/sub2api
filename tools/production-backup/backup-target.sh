@@ -139,6 +139,8 @@ docker exec -e "REDISCLI_AUTH=$PANEL_REDIS_ROOT_PASSWORD" "$REDIS_CONTAINER" red
 tar --zstd -cpf "$BUNDLE_DIR/payload/sub2api.tar.zst" -C / opt/sub2api
 
 copy_path /etc/systemd/system/sub2api.service "$BUNDLE_DIR/files/etc/systemd/system"
+copy_file /etc/systemd/system/sub2api-custom-update.service "$BUNDLE_DIR/files/etc/systemd/system/sub2api-custom-update.service"
+copy_file /etc/systemd/system/sub2api-custom-update.path "$BUNDLE_DIR/files/etc/systemd/system/sub2api-custom-update.path"
 copy_file /etc/sudoers.d/sub2api-custom-update "$BUNDLE_DIR/files/etc/sudoers.d/sub2api-custom-update"
 copy_path /etc/1panel "$BUNDLE_DIR/files/etc"
 copy_file /usr/local/sbin/sub2api-custom-update "$BUNDLE_DIR/files/usr/local/sbin/sub2api-custom-update"
