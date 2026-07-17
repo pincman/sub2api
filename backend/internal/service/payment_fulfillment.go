@@ -218,6 +218,9 @@ func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) erro
 	if err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
+	if o.OrderType == payment.OrderTypeSubscriptionUpgrade {
+		return s.ExecuteSubscriptionUpgradeFulfillment(ctx, oid)
+	}
 	if o.OrderType == payment.OrderTypeSubscription {
 		return s.ExecuteSubscriptionFulfillment(ctx, oid)
 	}
@@ -398,7 +401,7 @@ func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.Payment
 		switch auditAction {
 		case "RECHARGE_SUCCESS":
 			err = s.sendBalanceRechargeSuccessNotification(ctx, o)
-		case "SUBSCRIPTION_SUCCESS":
+		case "SUBSCRIPTION_SUCCESS", "SUBSCRIPTION_UPGRADE_SUCCESS":
 			err = s.sendSubscriptionPurchaseSuccessNotification(ctx, o)
 		default:
 			return

@@ -365,6 +365,45 @@ func (_u *PaymentOrderUpdate) ClearSubscriptionDays() *PaymentOrderUpdate {
 	return _u
 }
 
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdate) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpdate {
+	_u.mutation.ResetUpgradeSourceSubscriptionID()
+	_u.mutation.SetUpgradeSourceSubscriptionID(v)
+	return _u
+}
+
+// SetNillableUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableUpgradeSourceSubscriptionID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetUpgradeSourceSubscriptionID(*v)
+	}
+	return _u
+}
+
+// AddUpgradeSourceSubscriptionID adds value to the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdate) AddUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpdate {
+	_u.mutation.AddUpgradeSourceSubscriptionID(v)
+	return _u
+}
+
+// ClearUpgradeSourceSubscriptionID clears the value of the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdate) ClearUpgradeSourceSubscriptionID() *PaymentOrderUpdate {
+	_u.mutation.ClearUpgradeSourceSubscriptionID()
+	return _u
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (_u *PaymentOrderUpdate) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderUpdate {
+	_u.mutation.SetUpgradeSnapshot(v)
+	return _u
+}
+
+// ClearUpgradeSnapshot clears the value of the "upgrade_snapshot" field.
+func (_u *PaymentOrderUpdate) ClearUpgradeSnapshot() *PaymentOrderUpdate {
+	_u.mutation.ClearUpgradeSnapshot()
+	return _u
+}
+
 // SetProviderInstanceID sets the "provider_instance_id" field.
 func (_u *PaymentOrderUpdate) SetProviderInstanceID(v string) *PaymentOrderUpdate {
 	_u.mutation.SetProviderInstanceID(v)
@@ -941,6 +980,21 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if _u.mutation.SubscriptionDaysCleared() {
 		_spec.ClearField(paymentorder.FieldSubscriptionDays, field.TypeInt)
 	}
+	if value, ok := _u.mutation.UpgradeSourceSubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpgradeSourceSubscriptionID(); ok {
+		_spec.AddField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpgradeSourceSubscriptionIDCleared() {
+		_spec.ClearField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpgradeSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.UpgradeSnapshotCleared() {
+		_spec.ClearField(paymentorder.FieldUpgradeSnapshot, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)
 	}
@@ -1425,6 +1479,45 @@ func (_u *PaymentOrderUpdateOne) AddSubscriptionDays(v int) *PaymentOrderUpdateO
 // ClearSubscriptionDays clears the value of the "subscription_days" field.
 func (_u *PaymentOrderUpdateOne) ClearSubscriptionDays() *PaymentOrderUpdateOne {
 	_u.mutation.ClearSubscriptionDays()
+	return _u
+}
+
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdateOne) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetUpgradeSourceSubscriptionID()
+	_u.mutation.SetUpgradeSourceSubscriptionID(v)
+	return _u
+}
+
+// SetNillableUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableUpgradeSourceSubscriptionID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetUpgradeSourceSubscriptionID(*v)
+	}
+	return _u
+}
+
+// AddUpgradeSourceSubscriptionID adds value to the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdateOne) AddUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.AddUpgradeSourceSubscriptionID(v)
+	return _u
+}
+
+// ClearUpgradeSourceSubscriptionID clears the value of the "upgrade_source_subscription_id" field.
+func (_u *PaymentOrderUpdateOne) ClearUpgradeSourceSubscriptionID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearUpgradeSourceSubscriptionID()
+	return _u
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (_u *PaymentOrderUpdateOne) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderUpdateOne {
+	_u.mutation.SetUpgradeSnapshot(v)
+	return _u
+}
+
+// ClearUpgradeSnapshot clears the value of the "upgrade_snapshot" field.
+func (_u *PaymentOrderUpdateOne) ClearUpgradeSnapshot() *PaymentOrderUpdateOne {
+	_u.mutation.ClearUpgradeSnapshot()
 	return _u
 }
 
@@ -2033,6 +2126,21 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if _u.mutation.SubscriptionDaysCleared() {
 		_spec.ClearField(paymentorder.FieldSubscriptionDays, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpgradeSourceSubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedUpgradeSourceSubscriptionID(); ok {
+		_spec.AddField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64, value)
+	}
+	if _u.mutation.UpgradeSourceSubscriptionIDCleared() {
+		_spec.ClearField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.UpgradeSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSnapshot, field.TypeJSON, value)
+	}
+	if _u.mutation.UpgradeSnapshotCleared() {
+		_spec.ClearField(paymentorder.FieldUpgradeSnapshot, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)

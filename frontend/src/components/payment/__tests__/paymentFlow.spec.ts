@@ -331,6 +331,24 @@ describe('buildCreateOrderPayload', () => {
     })
   })
 
+  it('includes the source subscription for an upgrade order', () => {
+    expect(buildCreateOrderPayload({
+      amount: 525,
+      paymentType: 'alipay',
+      orderType: 'subscription_upgrade',
+      planId: 40,
+      sourceSubscriptionId: 88,
+      origin: 'https://app.example.com',
+      isMobile: false,
+      isWechatBrowser: false,
+    })).toMatchObject({
+      amount: 525,
+      order_type: 'subscription_upgrade',
+      plan_id: 40,
+      source_subscription_id: 88,
+    })
+  })
+
   it('passes is_mobile: false when forceQRCode is enabled for alipay', () => {
     expect(buildCreateOrderPayload({
       amount: 50,

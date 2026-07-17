@@ -211,6 +211,26 @@ func (_c *PaymentOrderCreate) SetNillableSubscriptionDays(v *int) *PaymentOrderC
 	return _c
 }
 
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (_c *PaymentOrderCreate) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetUpgradeSourceSubscriptionID(v)
+	return _c
+}
+
+// SetNillableUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableUpgradeSourceSubscriptionID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetUpgradeSourceSubscriptionID(*v)
+	}
+	return _c
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (_c *PaymentOrderCreate) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderCreate {
+	_c.mutation.SetUpgradeSnapshot(v)
+	return _c
+}
+
 // SetProviderInstanceID sets the "provider_instance_id" field.
 func (_c *PaymentOrderCreate) SetProviderInstanceID(v string) *PaymentOrderCreate {
 	_c.mutation.SetProviderInstanceID(v)
@@ -769,6 +789,14 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 		_spec.SetField(paymentorder.FieldSubscriptionDays, field.TypeInt, value)
 		_node.SubscriptionDays = &value
 	}
+	if value, ok := _c.mutation.UpgradeSourceSubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSourceSubscriptionID, field.TypeInt64, value)
+		_node.UpgradeSourceSubscriptionID = &value
+	}
+	if value, ok := _c.mutation.UpgradeSnapshot(); ok {
+		_spec.SetField(paymentorder.FieldUpgradeSnapshot, field.TypeJSON, value)
+		_node.UpgradeSnapshot = value
+	}
 	if value, ok := _c.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)
 		_node.ProviderInstanceID = &value
@@ -1213,6 +1241,48 @@ func (u *PaymentOrderUpsert) AddSubscriptionDays(v int) *PaymentOrderUpsert {
 // ClearSubscriptionDays clears the value of the "subscription_days" field.
 func (u *PaymentOrderUpsert) ClearSubscriptionDays() *PaymentOrderUpsert {
 	u.SetNull(paymentorder.FieldSubscriptionDays)
+	return u
+}
+
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsert) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldUpgradeSourceSubscriptionID, v)
+	return u
+}
+
+// UpdateUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateUpgradeSourceSubscriptionID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldUpgradeSourceSubscriptionID)
+	return u
+}
+
+// AddUpgradeSourceSubscriptionID adds v to the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsert) AddUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldUpgradeSourceSubscriptionID, v)
+	return u
+}
+
+// ClearUpgradeSourceSubscriptionID clears the value of the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsert) ClearUpgradeSourceSubscriptionID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldUpgradeSourceSubscriptionID)
+	return u
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsert) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldUpgradeSnapshot, v)
+	return u
+}
+
+// UpdateUpgradeSnapshot sets the "upgrade_snapshot" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateUpgradeSnapshot() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldUpgradeSnapshot)
+	return u
+}
+
+// ClearUpgradeSnapshot clears the value of the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsert) ClearUpgradeSnapshot() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldUpgradeSnapshot)
 	return u
 }
 
@@ -1925,6 +1995,55 @@ func (u *PaymentOrderUpsertOne) UpdateSubscriptionDays() *PaymentOrderUpsertOne 
 func (u *PaymentOrderUpsertOne) ClearSubscriptionDays() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionDays()
+	})
+}
+
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertOne) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetUpgradeSourceSubscriptionID(v)
+	})
+}
+
+// AddUpgradeSourceSubscriptionID adds v to the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertOne) AddUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddUpgradeSourceSubscriptionID(v)
+	})
+}
+
+// UpdateUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateUpgradeSourceSubscriptionID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateUpgradeSourceSubscriptionID()
+	})
+}
+
+// ClearUpgradeSourceSubscriptionID clears the value of the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertOne) ClearUpgradeSourceSubscriptionID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearUpgradeSourceSubscriptionID()
+	})
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsertOne) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetUpgradeSnapshot(v)
+	})
+}
+
+// UpdateUpgradeSnapshot sets the "upgrade_snapshot" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateUpgradeSnapshot() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateUpgradeSnapshot()
+	})
+}
+
+// ClearUpgradeSnapshot clears the value of the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsertOne) ClearUpgradeSnapshot() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearUpgradeSnapshot()
 	})
 }
 
@@ -2857,6 +2976,55 @@ func (u *PaymentOrderUpsertBulk) UpdateSubscriptionDays() *PaymentOrderUpsertBul
 func (u *PaymentOrderUpsertBulk) ClearSubscriptionDays() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionDays()
+	})
+}
+
+// SetUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertBulk) SetUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetUpgradeSourceSubscriptionID(v)
+	})
+}
+
+// AddUpgradeSourceSubscriptionID adds v to the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertBulk) AddUpgradeSourceSubscriptionID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddUpgradeSourceSubscriptionID(v)
+	})
+}
+
+// UpdateUpgradeSourceSubscriptionID sets the "upgrade_source_subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateUpgradeSourceSubscriptionID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateUpgradeSourceSubscriptionID()
+	})
+}
+
+// ClearUpgradeSourceSubscriptionID clears the value of the "upgrade_source_subscription_id" field.
+func (u *PaymentOrderUpsertBulk) ClearUpgradeSourceSubscriptionID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearUpgradeSourceSubscriptionID()
+	})
+}
+
+// SetUpgradeSnapshot sets the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsertBulk) SetUpgradeSnapshot(v map[string]interface{}) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetUpgradeSnapshot(v)
+	})
+}
+
+// UpdateUpgradeSnapshot sets the "upgrade_snapshot" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateUpgradeSnapshot() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateUpgradeSnapshot()
+	})
+}
+
+// ClearUpgradeSnapshot clears the value of the "upgrade_snapshot" field.
+func (u *PaymentOrderUpsertBulk) ClearUpgradeSnapshot() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearUpgradeSnapshot()
 	})
 }
 

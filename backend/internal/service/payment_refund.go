@@ -255,6 +255,13 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 }
 
 func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, p *RefundPlan, force bool) *RefundResult {
+	if o.OrderType == payment.OrderTypeSubscriptionUpgrade {
+		if !force {
+			return &RefundResult{Success: false, Warning: "subscription upgrade refunds require manual review because the source subscription was exchanged for credit", RequireForce: true}
+		}
+		p.DeductionType = payment.DeductionTypeNone
+		return nil
+	}
 	if o.OrderType == payment.OrderTypeSubscription {
 		p.DeductionType = payment.DeductionTypeSubscription
 		if o.SubscriptionGroupID != nil && o.SubscriptionDays != nil {

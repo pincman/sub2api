@@ -145,6 +145,11 @@ func SubscriptionDays(v int) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldSubscriptionDays, v))
 }
 
+// UpgradeSourceSubscriptionID applies equality check predicate on the "upgrade_source_subscription_id" field. It's identical to UpgradeSourceSubscriptionIDEQ.
+func UpgradeSourceSubscriptionID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldUpgradeSourceSubscriptionID, v))
+}
+
 // ProviderInstanceID applies equality check predicate on the "provider_instance_id" field. It's identical to ProviderInstanceIDEQ.
 func ProviderInstanceID(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldProviderInstanceID, v))
@@ -1288,6 +1293,66 @@ func SubscriptionDaysIsNil() predicate.PaymentOrder {
 // SubscriptionDaysNotNil applies the NotNil predicate on the "subscription_days" field.
 func SubscriptionDaysNotNil() predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldNotNull(FieldSubscriptionDays))
+}
+
+// UpgradeSourceSubscriptionIDEQ applies the EQ predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDNEQ applies the NEQ predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDIn applies the In predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldUpgradeSourceSubscriptionID, vs...))
+}
+
+// UpgradeSourceSubscriptionIDNotIn applies the NotIn predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldUpgradeSourceSubscriptionID, vs...))
+}
+
+// UpgradeSourceSubscriptionIDGT applies the GT predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDGT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDGTE applies the GTE predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDGTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDLT applies the LT predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDLT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDLTE applies the LTE predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDLTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldUpgradeSourceSubscriptionID, v))
+}
+
+// UpgradeSourceSubscriptionIDIsNil applies the IsNil predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldUpgradeSourceSubscriptionID))
+}
+
+// UpgradeSourceSubscriptionIDNotNil applies the NotNil predicate on the "upgrade_source_subscription_id" field.
+func UpgradeSourceSubscriptionIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldUpgradeSourceSubscriptionID))
+}
+
+// UpgradeSnapshotIsNil applies the IsNil predicate on the "upgrade_snapshot" field.
+func UpgradeSnapshotIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldUpgradeSnapshot))
+}
+
+// UpgradeSnapshotNotNil applies the NotNil predicate on the "upgrade_snapshot" field.
+func UpgradeSnapshotNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldUpgradeSnapshot))
 }
 
 // ProviderInstanceIDEQ applies the EQ predicate on the "provider_instance_id" field.

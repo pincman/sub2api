@@ -107,16 +107,32 @@
                 </div>
                 <!-- Price -->
                 <div class="flex items-baseline gap-2">
-                  <span v-if="selectedPlan.original_price" class="text-sm text-gray-400 line-through dark:text-gray-500">
+                  <span v-if="selectedPlan.original_price && !selectedUpgradeQuote" class="text-sm text-gray-400 line-through dark:text-gray-500">
                     {{ formatSelectedSubscriptionPaymentAmount(selectedPlan.original_price) }}
                   </span>
-                  <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
-                  <span class="text-sm text-gray-500 dark:text-gray-400">/ {{ planValiditySuffix }}</span>
+                  <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedSubscriptionPaymentAmount(selectedUpgradeQuote?.upgrade_amount ?? selectedPlan.price) }}</span>
+                  <span class="text-sm text-gray-500 dark:text-gray-400">{{ selectedUpgradeQuote ? t('payment.upgradeDifference') : `/ ${planValiditySuffix}` }}</span>
                 </div>
                 <!-- Description -->
                 <p v-if="selectedPlan.description" class="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
                   {{ selectedPlan.description }}
                 </p>
+                <div v-if="selectedUpgradeQuote" class="mt-4 space-y-2 rounded-xl border border-primary-100 bg-primary-50/70 p-3 text-sm dark:border-primary-900/50 dark:bg-primary-950/20">
+                  <div class="flex justify-between gap-3">
+                    <span class="text-gray-500 dark:text-gray-400">{{ t('payment.sourcePlanValue') }}</span>
+                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatSelectedSubscriptionPaymentAmount(selectedUpgradeQuote.source_price) }}</span>
+                  </div>
+                  <div class="flex justify-between gap-3">
+                    <span class="text-gray-500 dark:text-gray-400">{{ t('payment.remainingQuotaCredit') }}（${{ selectedUpgradeQuote.remaining_quota.toFixed(2) }}）</span>
+                    <span class="font-medium text-emerald-600 dark:text-emerald-400">-{{ formatSelectedSubscriptionPaymentAmount(selectedUpgradeQuote.credit_amount) }}</span>
+                  </div>
+                  <div class="flex justify-between gap-3 border-t border-primary-100 pt-2 dark:border-primary-900/50">
+                    <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.targetPlanPrice') }}</span>
+                    <span class="font-semibold text-gray-900 dark:text-white">{{ formatSelectedSubscriptionPaymentAmount(selectedUpgradeQuote.target_price) }}</span>
+                  </div>
+                  <p class="text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t('payment.upgradeResetHint', { quota: selectedUpgradeQuote.target_quota, days: selectedUpgradeQuote.validity_days }) }}</p>
+                  <p class="rounded-lg bg-amber-50 px-2.5 py-2 text-xs leading-relaxed text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{{ t('payment.upgradeLockHint') }}</p>
+                </div>
                 <!-- Rate + Limits grid -->
                 <div class="mt-3 grid grid-cols-2 gap-3">
                   <div>
@@ -179,7 +195,7 @@
                 </span>
                 <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(subTotalAmount) }}</span>
               </button>
-              <button class="btn btn-secondary w-full" @click="selectedPlan = null">{{ t('common.cancel') }}</button>
+              <button class="btn btn-secondary w-full" @click="cancelSelectedPlan">{{ t('common.cancel') }}</button>
             </template>
             <!-- Plan list -->
             <template v-else>
@@ -210,7 +226,18 @@
                         <span v-else>{{ t('userSubscriptions.noExpiration') }}</span>
                       </div>
                     </div>
-                    <span class="badge badge-success shrink-0 text-[10px]">{{ t('userSubscriptions.status.active') }}</span>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <button
+                        v-if="(sub.group?.monthly_limit_usd ?? 0) > 0"
+                        type="button"
+                        class="rounded-lg border border-primary-200 px-2.5 py-1 text-[11px] font-semibold text-primary-600 transition hover:bg-primary-50 disabled:opacity-50 dark:border-primary-800 dark:text-primary-400 dark:hover:bg-primary-950/30"
+                        :disabled="upgradeLoadingSubscriptionId === sub.id"
+                        @click="openUpgradeModal(sub)"
+                      >
+                        {{ upgradeLoadingSubscriptionId === sub.id ? t('common.loading') : t('payment.upgradeNow') }}
+                      </button>
+                      <span class="badge badge-success text-[10px]">{{ t('userSubscriptions.status.active') }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -227,6 +254,45 @@
         </div>
       </template>
     </div>
+    <!-- Subscription Upgrade Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showUpgradeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" @click.self="closeUpgradeModal">
+          <div class="relative max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-dark-700 dark:bg-dark-900">
+            <button class="absolute right-4 top-4 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700" @click="closeUpgradeModal">
+              <span class="sr-only">{{ t('common.close') }}</span>
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h3 class="mb-1 text-lg font-semibold text-gray-900 dark:text-white">{{ t('payment.selectUpgradePlan') }}</h3>
+            <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">{{ t('payment.upgradeCalculationHint') }}</p>
+            <div v-if="upgradeQuotes.length === 0" class="rounded-xl bg-gray-50 py-10 text-center text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+              {{ t('payment.noUpgradePlans') }}
+            </div>
+            <div v-else class="space-y-3">
+              <button
+                v-for="quote in upgradeQuotes"
+                :key="quote.target_plan_id"
+                type="button"
+                class="w-full rounded-xl border border-gray-200 p-4 text-left transition hover:border-primary-400 hover:shadow-md dark:border-dark-700 dark:hover:border-primary-700"
+                @click="selectUpgradeQuote(quote)"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <div class="font-semibold text-gray-900 dark:text-white">{{ quote.target_plan_name }}</div>
+                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">${{ quote.target_quota }} / {{ quote.validity_days }} {{ t('payment.days') }}</div>
+                  </div>
+                  <div class="text-right">
+                    <div class="text-xs text-gray-400">{{ t('payment.upgradePay') }}</div>
+                    <div class="text-xl font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedSubscriptionPaymentAmount(quote.upgrade_amount) }}</div>
+                    <div class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ t('payment.creditApplied', { amount: formatSelectedSubscriptionPaymentAmount(quote.credit_amount) }) }}</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
     <!-- Renewal Plan Selection Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -267,7 +333,8 @@ import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { SubscriptionPlan, SubscriptionUpgradeQuote, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -326,6 +393,10 @@ const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
+const selectedUpgradeQuote = ref<SubscriptionUpgradeQuote | null>(null)
+const showUpgradeModal = ref(false)
+const upgradeQuotes = ref<SubscriptionUpgradeQuote[]>([])
+const upgradeLoadingSubscriptionId = ref<number | null>(null)
 const previewImage = ref('')
 
 const paymentPhase = ref<'select' | 'paying'>('select')
@@ -336,6 +407,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  sourceSubscriptionId?: number
 }
 
 interface WeixinJSBridgeLike {
@@ -441,7 +513,7 @@ async function redirectToPaymentResult(state: PaymentRecoverySnapshot): Promise<
 
 function buildWechatOAuthAuthorizeUrl(
   authorizeUrl: string,
-  context: { paymentType: string; orderType: OrderType; planId?: number; orderAmount: number },
+  context: { paymentType: string; orderType: OrderType; planId?: number; sourceSubscriptionId?: number; orderAmount: number },
 ): string {
   const normalizedUrl = authorizeUrl.trim()
   if (!normalizedUrl || typeof window === 'undefined') {
@@ -463,6 +535,12 @@ function buildWechatOAuthAuthorizeUrl(
       redirectUrl.searchParams.delete('plan_id')
     }
 
+    if (context.sourceSubscriptionId) {
+      redirectUrl.searchParams.set('source_subscription_id', String(context.sourceSubscriptionId))
+    } else {
+      redirectUrl.searchParams.delete('source_subscription_id')
+    }
+
     if (context.orderAmount > 0) {
       redirectUrl.searchParams.set('amount', String(context.orderAmount))
     } else {
@@ -477,9 +555,10 @@ function buildWechatOAuthAuthorizeUrl(
 }
 
 function onPaymentDone() {
-  const wasSubscription = paymentState.value.orderType === 'subscription'
+  const wasSubscription = paymentState.value.orderType === 'subscription' || paymentState.value.orderType === 'subscription_upgrade'
   resetPayment()
   selectedPlan.value = null
+  selectedUpgradeQuote.value = null
   if (wasSubscription) {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
@@ -489,7 +568,7 @@ async function onPaymentSuccess() {
   const completedPayment = { ...paymentState.value }
   removeRecoverySnapshot()
   authStore.refreshUser()
-  if (paymentState.value.orderType === 'subscription') {
+  if (paymentState.value.orderType === 'subscription' || paymentState.value.orderType === 'subscription_upgrade') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
   await redirectToPaymentResult(completedPayment)
@@ -652,7 +731,7 @@ const canSubmit = computed(() =>
 )
 
 const subPaymentAmount = computed(() => {
-  const price = selectedPlan.value?.price ?? 0
+  const price = selectedUpgradeQuote.value?.upgrade_amount ?? selectedPlan.value?.price ?? 0
   return subscriptionPaymentAmountForCurrency(price, selectedCurrency.value)
 })
 
@@ -675,7 +754,7 @@ function subscriptionTotalAmountForCurrency(value: number, currency: string): nu
 
 // Subscription-specific: method options based on gateway pay amount
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
-  const price = selectedPlan.value?.price ?? 0
+  const price = selectedUpgradeQuote.value?.upgrade_amount ?? selectedPlan.value?.price ?? 0
   return enabledMethods.value.map((type) => {
     const ml = visibleMethods.value[type]
     const currency = normalizePaymentCurrency(ml?.currency)
@@ -738,6 +817,7 @@ function planPeakRateLabel(plan: SubscriptionPlan): string {
 }
 
 function selectPlan(plan: SubscriptionPlan) {
+  selectedUpgradeQuote.value = null
   selectedPlan.value = plan
   errorMessage.value = ''
 }
@@ -745,6 +825,7 @@ function selectPlan(plan: SubscriptionPlan) {
 function selectPlanFromModal(plan: SubscriptionPlan) {
   showRenewalModal.value = false
   renewGroupId.value = null
+  selectedUpgradeQuote.value = null
   selectedPlan.value = plan
   errorMessage.value = ''
 }
@@ -754,6 +835,44 @@ function closeRenewalModal() {
   renewGroupId.value = null
 }
 
+function cancelSelectedPlan() {
+  selectedPlan.value = null
+  selectedUpgradeQuote.value = null
+}
+
+async function openUpgradeModal(sub: UserSubscription) {
+  if (upgradeLoadingSubscriptionId.value !== null) return
+  upgradeLoadingSubscriptionId.value = sub.id
+  errorMessage.value = ''
+  try {
+    const response = await paymentAPI.getSubscriptionUpgradeOptions(sub.id)
+    upgradeQuotes.value = response.data || []
+    showUpgradeModal.value = true
+  } catch (err: unknown) {
+    errorMessage.value = extractI18nErrorMessage(err, t, 'payment.errors', extractApiErrorMessage(err, t('payment.noUpgradePlans')))
+    appStore.showError(errorMessage.value)
+  } finally {
+    upgradeLoadingSubscriptionId.value = null
+  }
+}
+
+function closeUpgradeModal() {
+  showUpgradeModal.value = false
+  upgradeQuotes.value = []
+}
+
+function selectUpgradeQuote(quote: SubscriptionUpgradeQuote) {
+  const plan = checkout.value.plans.find(item => item.id === quote.target_plan_id)
+  if (!plan) {
+    appStore.showError(t('payment.errors.PLAN_NOT_AVAILABLE'))
+    return
+  }
+  selectedUpgradeQuote.value = quote
+  selectedPlan.value = plan
+  closeUpgradeModal()
+  errorMessage.value = ''
+}
+
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
   await createOrder(validAmount.value, 'balance')
@@ -761,7 +880,24 @@ async function handleSubmitRecharge() {
 
 async function confirmSubscribe() {
   if (!selectedPlan.value || submitting.value) return
+  if (selectedUpgradeQuote.value) {
+    await createOrder(selectedUpgradeQuote.value.upgrade_amount, 'subscription_upgrade', selectedPlan.value.id, {
+      sourceSubscriptionId: selectedUpgradeQuote.value.source_subscription_id,
+    })
+    return
+  }
   await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
+}
+
+async function cancelUpgradeOrderBeforeLeaving(orderType: OrderType, orderId: number): Promise<boolean> {
+  if (orderType !== 'subscription_upgrade' || orderId <= 0) return true
+  try {
+    await paymentAPI.cancelOrder(orderId)
+    return true
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+    return false
+  }
 }
 
 async function createOrder(orderAmount: number, orderType: OrderType, planId?: number, options: CreateOrderOptions = {}) {
@@ -775,6 +911,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       paymentType: requestType,
       orderType,
       planId,
+      sourceSubscriptionId: options.sourceSubscriptionId,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -839,6 +976,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
         paymentType: visibleMethod,
         orderType,
         planId,
+        sourceSubscriptionId: options.sourceSubscriptionId,
         orderAmount,
       })
       return
@@ -870,9 +1008,11 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
         const jsapiResult = await invokeWechatJsapiPayment(decision.jsapi as Record<string, unknown>)
         const errMsg = String(jsapiResult.err_msg || '').toLowerCase()
         if (errMsg.includes('cancel')) {
+          if (!await cancelUpgradeOrderBeforeLeaving(orderType, decision.paymentState.orderId)) return
           appStore.showInfo(t('payment.qr.cancelled'))
           resetPayment()
         } else if (errMsg && !errMsg.includes('ok')) {
+          if (!await cancelUpgradeOrderBeforeLeaving(orderType, decision.paymentState.orderId)) return
           resetPayment()
           const fallbackApplied = await attemptMobileQrFallback(
             { reason: 'WECHAT_JSAPI_FAILED', message: errMsg },
@@ -880,6 +1020,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               orderAmount,
               orderType,
               planId,
+              sourceSubscriptionId: options.sourceSubscriptionId,
               paymentType: visibleMethod,
               attempted: options.mobileQrFallbackAttempted === true,
             },
@@ -893,11 +1034,13 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           await redirectToPaymentResult(resultState)
         }
       } catch (err: unknown) {
+        if (!await cancelUpgradeOrderBeforeLeaving(orderType, decision.paymentState.orderId)) return
         resetPayment()
         const fallbackApplied = await attemptMobileQrFallback(err, {
           orderAmount,
           orderType,
           planId,
+          sourceSubscriptionId: options.sourceSubscriptionId,
           paymentType: visibleMethod,
           attempted: options.mobileQrFallbackAttempted === true,
         })
@@ -927,6 +1070,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       orderAmount,
       orderType,
       planId,
+      sourceSubscriptionId: options.sourceSubscriptionId,
       paymentType: requestType,
       attempted: options.mobileQrFallbackAttempted === true,
     })) {
@@ -954,6 +1098,7 @@ interface MobileQrFallbackContext {
   orderAmount: number
   orderType: OrderType
   planId?: number
+  sourceSubscriptionId?: number
   paymentType: string
   attempted: boolean
 }
@@ -1003,6 +1148,7 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       paymentType: visibleMethod,
       orderType: context.orderType,
       planId: context.planId,
+      sourceSubscriptionId: context.sourceSubscriptionId,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: false,
       isWechatBrowser: false,
@@ -1072,7 +1218,7 @@ async function resumeWechatPaymentFromQuery() {
   if (resume.orderType === 'balance' && resume.orderAmount > 0) {
     amount.value = resume.orderAmount
   }
-  if (resume.orderType === 'subscription' && resume.planId) {
+  if (resume.orderType !== 'balance' && resume.planId) {
     selectedPlan.value = checkout.value.plans.find(plan => plan.id === resume.planId) ?? null
   }
 
@@ -1082,6 +1228,7 @@ async function resumeWechatPaymentFromQuery() {
     await createOrder(0, resume.orderType, resume.planId, {
       wechatResumeToken: resume.wechatResumeToken,
       paymentType: resume.paymentType,
+      sourceSubscriptionId: resume.sourceSubscriptionId,
       isResume: true,
     })
     return
@@ -1091,6 +1238,7 @@ async function resumeWechatPaymentFromQuery() {
     await createOrder(resume.orderAmount, resume.orderType, resume.planId, {
       openid: resume.openid,
       paymentType: resume.paymentType,
+      sourceSubscriptionId: resume.sourceSubscriptionId,
       isResume: true,
     })
   }
