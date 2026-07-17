@@ -66,6 +66,7 @@ type systemUpdateResponseEnvelope struct {
 		AlreadyUpToDate bool   `json:"already_up_to_date"`
 		CurrentVersion  string `json:"current_version"`
 		LatestVersion   string `json:"latest_version"`
+		NeedRestart     bool   `json:"need_restart"`
 		OperationID     string `json:"operation_id"`
 	} `json:"data"`
 }
@@ -163,6 +164,28 @@ func TestSystemHandlerPerformUpdateFailureStillReturnsInternalError(t *testing.T
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, http.StatusInternalServerError, body.Code)
 	require.Equal(t, "internal error", body.Message)
+}
+
+func TestSystemHandlerPerformUpdateCustomDispatchReturnsQueuedSuccess(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{performErr: service.ErrCustomBuildUpdateDispatched}
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/update", nil)
+	req.Header.Set("Idempotency-Key", "custom-update-queued")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, updateSvc.performCall)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusSucceeded)
+
+	var body systemUpdateResponseEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, 0, body.Code)
+	require.Contains(t, body.Data.Message, "Verified custom update started")
+	require.False(t, body.Data.NeedRestart)
+	require.NotEmpty(t, body.Data.OperationID)
 }
 
 func TestSystemHandlerRollbackWithoutBodyUsesLegacyBackup(t *testing.T) {

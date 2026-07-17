@@ -76,6 +76,14 @@ func (h *SystemHandler) PerformUpdate(c *gin.Context) {
 		}()
 
 		if err := h.updateSvc.PerformUpdate(ctx); err != nil {
+			if errors.Is(err, service.ErrCustomBuildUpdateDispatched) {
+				succeeded = true
+				return gin.H{
+					"message":      "Verified custom update started. A full backup, release verification, deployment, and health checks are running in the background.",
+					"need_restart": false,
+					"operation_id": lock.OperationID(),
+				}, nil
+			}
 			if errors.Is(err, service.ErrNoUpdateAvailable) {
 				info, checkErr := h.updateSvc.CheckUpdate(ctx, false)
 				if checkErr != nil {
