@@ -1,0 +1,4 @@
+# The application user can start exactly one parameterless, root-owned helper.
+# It cannot provide a release URL, executable path, or arbitrary systemd unit.
+Cmnd_Alias SUB2API_CUSTOM_UPDATE = /usr/bin/systemd-run --no-block --collect --unit=sub2api-custom-update /usr/local/sbin/sub2api-custom-update
+sub2api ALL=(root) NOPASSWD: SUB2API_CUSTOM_UPDATE
