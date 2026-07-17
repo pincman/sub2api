@@ -31,6 +31,7 @@ export default {
     refresh: '刷新',
     sourceMode: '源码构建',
     sourceModeHint: '源码构建请使用 git pull 更新',
+    customModeHint: '这是二开版本。请勿点击内置更新；需先合并上游到 pincman/sub2api，再发布自定义版本。',
     updateNow: '立即更新',
     updating: '正在更新...',
     updateComplete: '更新完成',
