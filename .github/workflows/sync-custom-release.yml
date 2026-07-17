@@ -111,19 +111,17 @@ jobs:
           echo "archive=release-dist/$archive" >> "$GITHUB_OUTPUT"
 
       - name: Create immutable fork release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag }}
+          target_commitish: ${{ steps.upstream.outputs.commit }}
+          name: Sub2API custom ${{ steps.upstream.outputs.upstream_tag }}
+          body: >-
+            Automated custom release from upstream ${{ steps.upstream.outputs.upstream_tag }}.
+            It includes the subscription-upgrade customization and was built
+            only after frontend and backend tests passed.
+          files: |
+            ${{ steps.package.outputs.archive }}
+            release-dist/checksums.txt
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          tag='${{ steps.package.outputs.tag }}'
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Custom release $tag already exists."
-            exit 0
-          fi
-          gh release create "$tag" \
-            '${{ steps.package.outputs.archive }}' \
-            release-dist/checksums.txt \
-            --target '${{ steps.upstream.outputs.commit }}' \
-            --title "Sub2API custom ${{ steps.upstream.outputs.upstream_tag }}" \
-            --notes "Automated custom release from upstream ${{ steps.upstream.outputs.upstream_tag }}. It includes the subscription-upgrade customization and was built only after frontend and backend tests passed."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
