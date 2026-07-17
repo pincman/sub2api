@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -49,6 +48,11 @@ const (
 	maxRollbackVersions = 3
 	// Fetch a few extra releases so filtering (current/newer/prerelease) still leaves enough candidates
 	rollbackFetchPageSize = 15
+
+	// The web process runs with NoNewPrivileges=true. A root-owned systemd path
+	// unit watches this file and starts the fixed custom-update helper whenever
+	// an administrator requests an update.
+	customUpdateRequestPath = "/opt/sub2api/.custom-update-request"
 )
 
 var semverPrefixPattern = regexp.MustCompile(`^(?:custom-)?v?(\d+)\.(\d+)\.(\d+)`)
@@ -75,21 +79,15 @@ type CustomUpdateDispatcher interface {
 	Dispatch(ctx context.Context) error
 }
 
-type systemdCustomUpdateDispatcher struct{}
+type fileSignalCustomUpdateDispatcher struct{}
 
-func (systemdCustomUpdateDispatcher) Dispatch(ctx context.Context) error {
-	output, err := exec.CommandContext(
-		ctx,
-		"/usr/bin/sudo",
-		"-n",
-		"/usr/bin/systemd-run",
-		"--no-block",
-		"--collect",
-		"--unit=sub2api-custom-update",
-		"/usr/local/sbin/sub2api-custom-update",
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("start verified custom update helper: %w: %s", err, strings.TrimSpace(string(output)))
+func (fileSignalCustomUpdateDispatcher) Dispatch(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	request := []byte(fmt.Sprintf("requested_at_utc=%s\n", time.Now().UTC().Format(time.RFC3339Nano)))
+	if err := os.WriteFile(customUpdateRequestPath, request, 0600); err != nil {
+		return fmt.Errorf("signal verified custom update helper: %w", err)
 	}
 	return nil
 }
@@ -116,7 +114,7 @@ func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, versi
 		currentVersion:         version,
 		buildType:              buildType,
 		releaseRepo:            releaseRepo,
-		customUpdateDispatcher: systemdCustomUpdateDispatcher{},
+		customUpdateDispatcher: fileSignalCustomUpdateDispatcher{},
 	}
 }
 

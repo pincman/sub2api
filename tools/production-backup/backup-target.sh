@@ -139,7 +139,9 @@ docker exec -e "REDISCLI_AUTH=$PANEL_REDIS_ROOT_PASSWORD" "$REDIS_CONTAINER" red
 tar --zstd -cpf "$BUNDLE_DIR/payload/sub2api.tar.zst" -C / opt/sub2api
 
 copy_path /etc/systemd/system/sub2api.service "$BUNDLE_DIR/files/etc/systemd/system"
+copy_file /etc/sudoers.d/sub2api-custom-update "$BUNDLE_DIR/files/etc/sudoers.d/sub2api-custom-update"
 copy_path /etc/1panel "$BUNDLE_DIR/files/etc"
+copy_file /usr/local/sbin/sub2api-custom-update "$BUNDLE_DIR/files/usr/local/sbin/sub2api-custom-update"
 copy_path "$PANEL_ROOT/www" "$BUNDLE_DIR/files$PANEL_ROOT"
 copy_path "$OPENRESTY_APP_DIR" "$BUNDLE_DIR/files$PANEL_ROOT/apps/openresty"
 copy_path "$PG_APP_DIR/.env" "$BUNDLE_DIR/files$PANEL_ROOT/apps/postgresql/postgresql"

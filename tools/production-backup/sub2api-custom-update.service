@@ -1,0 +1,11 @@
+[Unit]
+Description=Sub2API verified custom update helper
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/sub2api-custom-update
+TimeoutStartSec=30min

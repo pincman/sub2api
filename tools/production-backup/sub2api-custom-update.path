@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a Sub2API verified custom update request
+
+[Path]
+PathChanged=/opt/sub2api/.custom-update-request
+Unit=sub2api-custom-update.service
+
+[Install]
+WantedBy=multi-user.target
