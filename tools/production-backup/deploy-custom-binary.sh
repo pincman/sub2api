@@ -41,7 +41,10 @@ systemctl start sub2api.service
 
 healthy="false"
 for _ in $(seq 1 60); do
-  if curl -fsS --max-time 3 http://127.0.0.1:8081/health | grep -q '"status":"ok"'; then
+  health_status="$(curl -sS -o /tmp/sub2api-health.out -w '%{http_code}' --max-time 3 http://127.0.0.1:8081/health || true)"
+  homepage_status="$(curl -sS -o /tmp/sub2api-homepage.out -w '%{http_code}' --max-time 3 http://127.0.0.1:8081/ || true)"
+  if [[ "$health_status" == "200" ]] && grep -q '"status":"ok"' /tmp/sub2api-health.out && \
+    [[ "$homepage_status" == "200" ]] && grep -qi '<!doctype html' /tmp/sub2api-homepage.out; then
     healthy="true"
     break
   fi
