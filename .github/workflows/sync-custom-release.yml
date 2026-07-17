@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: sync-custom-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync-test-release:
