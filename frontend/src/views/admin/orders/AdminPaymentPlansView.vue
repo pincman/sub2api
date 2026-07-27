@@ -29,9 +29,9 @@
         </template>
         <template #cell-price="{ value, row }">
           <div class="text-sm">
-            <span class="font-medium text-gray-900 dark:text-white">${{ (value ?? 0).toFixed(2) }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ planCurrencySymbol(row.currency) }}{{ (value ?? 0).toFixed(2) }}</span>
             <span v-if="row.currency" class="ml-1 text-xs text-gray-400">{{ row.currency }}</span>
-            <span v-if="row.original_price" class="ml-1 text-xs text-gray-400 line-through">${{ row.original_price.toFixed(2) }}</span>
+            <span v-if="row.original_price" class="ml-1 text-xs text-gray-400 line-through">{{ planCurrencySymbol(row.currency) }}{{ row.original_price.toFixed(2) }}</span>
           </div>
         </template>
         <template #cell-validity_days="{ value, row }">
@@ -81,6 +81,7 @@ import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import type { AdminPaymentConfig } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { planCurrencySymbol } from '@/components/payment/currency'
 import adminAPI from '@/api/admin'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { AdminGroup } from '@/types'

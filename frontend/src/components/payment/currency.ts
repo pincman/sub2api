@@ -31,6 +31,15 @@ export function currencySymbol(currency?: string | null): string {
   return PAYMENT_CURRENCY_SYMBOLS[normalized] || normalized
 }
 
+/**
+ * Subscription plan prices historically used USD when no display currency was
+ * configured. Keep that compatibility while allowing an explicit currency to
+ * select the matching symbol (for example CNY -> ¥).
+ */
+export function planCurrencySymbol(currency?: string | null): string {
+  return currencySymbol(String(currency || '').trim() || 'USD')
+}
+
 function paymentCurrencyFractionDigits(currency: string): number {
   try {
     return new Intl.NumberFormat(undefined, {

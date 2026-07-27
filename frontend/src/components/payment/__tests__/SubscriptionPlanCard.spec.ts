@@ -25,7 +25,7 @@ const i18n = createI18n({
   },
 });
 
-const mountPlanCard = (groupPlatform: string) =>
+const mountPlanCard = (groupPlatform: string, planOverrides: Record<string, unknown> = {}) =>
   mount(SubscriptionPlanCard, {
     props: {
       plan: {
@@ -41,6 +41,7 @@ const mountPlanCard = (groupPlatform: string) =>
         validity_unit: "day",
         supported_model_scopes: ["claude", "gemini_text", "gemini_image"],
         is_active: true,
+        ...planOverrides,
       },
     },
     global: { plugins: [i18n, createPinia()] },
@@ -61,5 +62,23 @@ describe("SubscriptionPlanCard", () => {
     expect(text).toContain("Claude");
     expect(text).toContain("Gemini");
     expect(text).toContain("Imagen");
+  });
+
+  it("uses the CNY symbol and label for a CNY plan", () => {
+    const text = mountPlanCard("openai", {
+      price: 700,
+      original_price: 800,
+      currency: "CNY",
+    }).text();
+
+    expect(text).toContain("¥700CNY");
+    expect(text).toContain("¥800CNY");
+    expect(text).not.toContain("$700");
+  });
+
+  it("keeps the legacy dollar symbol when no plan currency is configured", () => {
+    const text = mountPlanCard("openai", { price: 700 }).text();
+
+    expect(text).toContain("$700");
   });
 });
