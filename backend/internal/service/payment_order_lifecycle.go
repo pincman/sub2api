@@ -137,9 +137,6 @@ func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, 
 			auditAction = "ORDER_EXPIRED"
 		}
 		s.writeAuditLog(ctx, o.ID, auditAction, op, map[string]any{"detail": ad})
-		if err := s.releaseUpgradeSource(ctx, o, ad); err != nil {
-			return "", fmt.Errorf("restore source subscription after order cancellation: %w", err)
-		}
 	}
 	return checkPaidResultCancelled, nil
 }

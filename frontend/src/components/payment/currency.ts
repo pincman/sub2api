@@ -1,8 +1,7 @@
 export const DEFAULT_PAYMENT_CURRENCY = 'CNY'
 /**
- * Balance values are stored in the service's accounting currency.  The
- * display currency is a presentation preference only (it does not convert
- * the numeric value), and historically balance screens used a dollar sign.
+ * Balance values are stored in the service's accounting currency. The display
+ * choice is presentation-only and intentionally does not convert numbers.
  */
 export const DEFAULT_BALANCE_DISPLAY_CURRENCY = 'USD'
 
@@ -32,7 +31,7 @@ export function normalizePaymentCurrency(currency?: string | null): string {
   return /^[A-Z]{3}$/.test(normalized) ? normalized : DEFAULT_PAYMENT_CURRENCY
 }
 
-/** Normalize the administrator's balance display currency preference. */
+/** Normalize the administrator's balance display preference. */
 export function normalizeBalanceDisplayCurrency(currency?: string | null): string {
   const normalized = String(currency || '').trim().toUpperCase()
   return normalized === 'USD' || normalized === 'CNY'
@@ -52,9 +51,7 @@ export function balanceDisplayCurrencySymbol(currency?: string | null): string {
 
 /**
  * Format a balance amount with the configured display symbol.
- *
- * This intentionally does not perform a currency conversion: balance values
- * are service credits, and the setting only controls their visible symbol.
+ * This intentionally does not perform a currency conversion.
  */
 export function formatBalanceAmount(
   amount: number | null | undefined,
@@ -64,15 +61,6 @@ export function formatBalanceAmount(
   const safeAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0
   const digits = Number.isInteger(fractionDigits) && fractionDigits >= 0 ? fractionDigits : 2
   return `${balanceDisplayCurrencySymbol(currency)}${safeAmount.toFixed(digits)}`
-}
-
-/**
- * Subscription plan prices historically used USD when no display currency was
- * configured. Keep that compatibility while allowing an explicit currency to
- * select the matching symbol (for example CNY -> ¥).
- */
-export function planCurrencySymbol(currency?: string | null): string {
-  return currencySymbol(String(currency || '').trim() || 'USD')
 }
 
 function paymentCurrencyFractionDigits(currency: string): number {

@@ -109,6 +109,14 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	alipayMobilePrecreateDeepLink := false
+	if cfg.AlipayMobilePrecreateDeepLink {
+		alipayMobilePrecreateDeepLink, err = h.configService.UsesOfficialAlipayVisibleMethod(ctx)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+	}
 
 	// Fetch plans with group info
 	plans, _ := h.configService.ListPlansForSale(ctx)
@@ -146,6 +154,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		HelpImageURL:                  cfg.HelpImageURL,
 		StripePublishableKey:          cfg.StripePublishableKey,
 		AlipayForceQRCode:             cfg.AlipayForceQRCode,
+		AlipayMobilePrecreateDeepLink: alipayMobilePrecreateDeepLink,
 	})
 }
 
@@ -163,6 +172,7 @@ type checkoutInfoResponse struct {
 	HelpImageURL                  string                          `json:"help_image_url"`
 	StripePublishableKey          string                          `json:"stripe_publishable_key"`
 	AlipayForceQRCode             bool                            `json:"alipay_force_qrcode"`
+	AlipayMobilePrecreateDeepLink bool                            `json:"alipay_mobile_precreate_deep_link"`
 }
 
 type checkoutPlan struct {
@@ -218,38 +228,16 @@ func (h *PaymentHandler) GetLimits(c *gin.Context) {
 	response.Success(c, resp)
 }
 
-// GetSubscriptionUpgradeOptions returns server-calculated, quota-value based
-// upgrade quotes for one active subscription.
-// GET /api/v1/payment/subscriptions/:id/upgrade-options
-func (h *PaymentHandler) GetSubscriptionUpgradeOptions(c *gin.Context) {
-	subject, ok := requireAuth(c)
-	if !ok {
-		return
-	}
-	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || subscriptionID <= 0 {
-		response.BadRequest(c, "invalid subscription id")
-		return
-	}
-	quotes, err := h.paymentService.GetSubscriptionUpgradeOptions(c.Request.Context(), subject.UserID, subscriptionID)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, quotes)
-}
-
 // CreateOrderRequest is the request body for creating a payment order.
 type CreateOrderRequest struct {
-	Amount               float64 `json:"amount"`
-	PaymentType          string  `json:"payment_type" binding:"required"`
-	OpenID               string  `json:"openid"`
-	WechatResumeToken    string  `json:"wechat_resume_token"`
-	ReturnURL            string  `json:"return_url"`
-	PaymentSource        string  `json:"payment_source"`
-	OrderType            string  `json:"order_type"`
-	PlanID               int64   `json:"plan_id"`
-	SourceSubscriptionID int64   `json:"source_subscription_id"`
+	Amount            float64 `json:"amount"`
+	PaymentType       string  `json:"payment_type" binding:"required"`
+	OpenID            string  `json:"openid"`
+	WechatResumeToken string  `json:"wechat_resume_token"`
+	ReturnURL         string  `json:"return_url"`
+	PaymentSource     string  `json:"payment_source"`
+	OrderType         string  `json:"order_type"`
+	PlanID            int64   `json:"plan_id"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -286,21 +274,20 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		mobile = *req.IsMobile
 	}
 	result, err := h.paymentService.CreateOrder(c.Request.Context(), service.CreateOrderRequest{
-		UserID:               subject.UserID,
-		Amount:               req.Amount,
-		PaymentType:          req.PaymentType,
-		OpenID:               req.OpenID,
-		ClientIP:             c.ClientIP(),
-		IsMobile:             mobile,
-		IsWeChatBrowser:      isWeChatBrowser(c),
-		SrcHost:              c.Request.Host,
-		SrcURL:               c.Request.Referer(),
-		ReturnURL:            req.ReturnURL,
-		PaymentSource:        req.PaymentSource,
-		OrderType:            req.OrderType,
-		PlanID:               req.PlanID,
-		SourceSubscriptionID: req.SourceSubscriptionID,
-		Locale:               c.GetHeader("Accept-Language"),
+		UserID:          subject.UserID,
+		Amount:          req.Amount,
+		PaymentType:     req.PaymentType,
+		OpenID:          req.OpenID,
+		ClientIP:        c.ClientIP(),
+		IsMobile:        mobile,
+		IsWeChatBrowser: isWeChatBrowser(c),
+		SrcHost:         c.Request.Host,
+		SrcURL:          c.Request.Referer(),
+		ReturnURL:       req.ReturnURL,
+		PaymentSource:   req.PaymentSource,
+		OrderType:       req.OrderType,
+		PlanID:          req.PlanID,
+		Locale:          c.GetHeader("Accept-Language"),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -343,9 +330,6 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 	}
 	if claims.PlanID > 0 {
 		req.PlanID = claims.PlanID
-	}
-	if claims.SourceSubscriptionID > 0 {
-		req.SourceSubscriptionID = claims.SourceSubscriptionID
 	}
 	return nil
 }
@@ -495,26 +479,25 @@ func (h *PaymentHandler) VerifyOrder(c *gin.Context) {
 // proves possession of the checkout session, so the result keeps the legacy
 // frontend contract needed by payment result pages.
 type PublicOrderResult struct {
-	ID                          int64      `json:"id"`
-	OutTradeNo                  string     `json:"out_trade_no"`
-	Amount                      float64    `json:"amount"`
-	PayAmount                   float64    `json:"pay_amount"`
-	FeeRate                     float64    `json:"fee_rate"`
-	Currency                    string     `json:"currency"`
-	PaymentType                 string     `json:"payment_type"`
-	OrderType                   string     `json:"order_type"`
-	Status                      string     `json:"status"`
-	CreatedAt                   time.Time  `json:"created_at"`
-	ExpiresAt                   time.Time  `json:"expires_at"`
-	PaidAt                      *time.Time `json:"paid_at,omitempty"`
-	CompletedAt                 *time.Time `json:"completed_at,omitempty"`
-	RefundAmount                float64    `json:"refund_amount"`
-	RefundReason                *string    `json:"refund_reason,omitempty"`
-	RefundRequestedAt           *time.Time `json:"refund_requested_at,omitempty"`
-	RefundRequestedBy           *string    `json:"refund_requested_by,omitempty"`
-	RefundRequestReason         *string    `json:"refund_request_reason,omitempty"`
-	PlanID                      *int64     `json:"plan_id,omitempty"`
-	UpgradeSourceSubscriptionID *int64     `json:"upgrade_source_subscription_id,omitempty"`
+	ID                  int64      `json:"id"`
+	OutTradeNo          string     `json:"out_trade_no"`
+	Amount              float64    `json:"amount"`
+	PayAmount           float64    `json:"pay_amount"`
+	FeeRate             float64    `json:"fee_rate"`
+	Currency            string     `json:"currency"`
+	PaymentType         string     `json:"payment_type"`
+	OrderType           string     `json:"order_type"`
+	Status              string     `json:"status"`
+	CreatedAt           time.Time  `json:"created_at"`
+	ExpiresAt           time.Time  `json:"expires_at"`
+	PaidAt              *time.Time `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	RefundAmount        float64    `json:"refund_amount"`
+	RefundReason        *string    `json:"refund_reason,omitempty"`
+	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
+	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
+	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
+	PlanID              *int64     `json:"plan_id,omitempty"`
 }
 
 // PublicOrderVerifyResult is returned by the legacy anonymous out_trade_no
@@ -639,28 +622,27 @@ func isMobile(c *gin.Context) bool {
 }
 
 type PaymentOrderResult struct {
-	ID                          int64      `json:"id"`
-	UserID                      int64      `json:"user_id"`
-	Amount                      float64    `json:"amount"`
-	PayAmount                   float64    `json:"pay_amount"`
-	FeeRate                     float64    `json:"fee_rate"`
-	Currency                    string     `json:"currency"`
-	PaymentType                 string     `json:"payment_type"`
-	OutTradeNo                  string     `json:"out_trade_no"`
-	Status                      string     `json:"status"`
-	OrderType                   string     `json:"order_type"`
-	CreatedAt                   time.Time  `json:"created_at"`
-	ExpiresAt                   time.Time  `json:"expires_at"`
-	PaidAt                      *time.Time `json:"paid_at,omitempty"`
-	CompletedAt                 *time.Time `json:"completed_at,omitempty"`
-	RefundAmount                float64    `json:"refund_amount"`
-	RefundReason                *string    `json:"refund_reason,omitempty"`
-	RefundRequestedAt           *time.Time `json:"refund_requested_at,omitempty"`
-	RefundRequestedBy           *string    `json:"refund_requested_by,omitempty"`
-	RefundRequestReason         *string    `json:"refund_request_reason,omitempty"`
-	PlanID                      *int64     `json:"plan_id,omitempty"`
-	UpgradeSourceSubscriptionID *int64     `json:"upgrade_source_subscription_id,omitempty"`
-	ProviderInstanceID          *string    `json:"provider_instance_id,omitempty"`
+	ID                  int64      `json:"id"`
+	UserID              int64      `json:"user_id"`
+	Amount              float64    `json:"amount"`
+	PayAmount           float64    `json:"pay_amount"`
+	FeeRate             float64    `json:"fee_rate"`
+	Currency            string     `json:"currency"`
+	PaymentType         string     `json:"payment_type"`
+	OutTradeNo          string     `json:"out_trade_no"`
+	Status              string     `json:"status"`
+	OrderType           string     `json:"order_type"`
+	CreatedAt           time.Time  `json:"created_at"`
+	ExpiresAt           time.Time  `json:"expires_at"`
+	PaidAt              *time.Time `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	RefundAmount        float64    `json:"refund_amount"`
+	RefundReason        *string    `json:"refund_reason,omitempty"`
+	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
+	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
+	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
+	PlanID              *int64     `json:"plan_id,omitempty"`
+	ProviderInstanceID  *string    `json:"provider_instance_id,omitempty"`
 }
 
 func sanitizePaymentOrdersForResponse(orders []*dbent.PaymentOrder) []PaymentOrderResult {
@@ -678,28 +660,27 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		return nil
 	}
 	return &PaymentOrderResult{
-		ID:                          order.ID,
-		UserID:                      order.UserID,
-		Amount:                      order.Amount,
-		PayAmount:                   order.PayAmount,
-		FeeRate:                     order.FeeRate,
-		Currency:                    service.PaymentOrderCurrency(order),
-		PaymentType:                 order.PaymentType,
-		OutTradeNo:                  order.OutTradeNo,
-		Status:                      order.Status,
-		OrderType:                   order.OrderType,
-		CreatedAt:                   order.CreatedAt,
-		ExpiresAt:                   order.ExpiresAt,
-		PaidAt:                      order.PaidAt,
-		CompletedAt:                 order.CompletedAt,
-		RefundAmount:                order.RefundAmount,
-		RefundReason:                order.RefundReason,
-		RefundRequestedAt:           order.RefundRequestedAt,
-		RefundRequestedBy:           order.RefundRequestedBy,
-		RefundRequestReason:         order.RefundRequestReason,
-		PlanID:                      order.PlanID,
-		UpgradeSourceSubscriptionID: order.UpgradeSourceSubscriptionID,
-		ProviderInstanceID:          order.ProviderInstanceID,
+		ID:                  order.ID,
+		UserID:              order.UserID,
+		Amount:              order.Amount,
+		PayAmount:           order.PayAmount,
+		FeeRate:             order.FeeRate,
+		Currency:            service.PaymentOrderCurrency(order),
+		PaymentType:         order.PaymentType,
+		OutTradeNo:          order.OutTradeNo,
+		Status:              order.Status,
+		OrderType:           order.OrderType,
+		CreatedAt:           order.CreatedAt,
+		ExpiresAt:           order.ExpiresAt,
+		PaidAt:              order.PaidAt,
+		CompletedAt:         order.CompletedAt,
+		RefundAmount:        order.RefundAmount,
+		RefundReason:        order.RefundReason,
+		RefundRequestedAt:   order.RefundRequestedAt,
+		RefundRequestedBy:   order.RefundRequestedBy,
+		RefundRequestReason: order.RefundRequestReason,
+		PlanID:              order.PlanID,
+		ProviderInstanceID:  order.ProviderInstanceID,
 	}
 }
 

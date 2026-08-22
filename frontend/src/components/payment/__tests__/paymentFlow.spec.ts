@@ -248,6 +248,34 @@ describe('decidePaymentLaunch', () => {
     expect(decision.paymentState.qrCode).toBe('https://pay.example.com/qr/session')
   })
 
+  it('launches the Alipay app for a mobile precreate order', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      qr_code: 'https://qr.alipay.com/dynamic-order-101',
+      alipay_mobile_precreate_deep_link: true,
+    }), {
+      visibleMethod: 'alipay',
+      orderType: 'balance',
+      isMobile: true,
+    })
+
+    expect(decision.kind).toBe('alipay_deep_link')
+    expect(decision.paymentState.qrCode).toBe('https://qr.alipay.com/dynamic-order-101')
+    expect(decision.paymentState.alipayMobilePrecreateDeepLink).toBe(true)
+  })
+
+  it('keeps the desktop Alipay QR flow when a precreate marker is present', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      qr_code: 'https://qr.alipay.com/dynamic-order-102',
+      alipay_mobile_precreate_deep_link: true,
+    }), {
+      visibleMethod: 'alipay',
+      orderType: 'balance',
+      isMobile: false,
+    })
+
+    expect(decision.kind).toBe('qr_waiting')
+  })
+
   it('does not affect non-alipay methods when forceQRCode is enabled', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       pay_url: 'https://pay.example.com/mobile/session',
@@ -303,24 +331,6 @@ describe('buildCreateOrderPayload', () => {
     })
   })
 
-  it('includes the source subscription for an upgrade order', () => {
-    expect(buildCreateOrderPayload({
-      amount: 525,
-      paymentType: 'alipay',
-      orderType: 'subscription_upgrade',
-      planId: 40,
-      sourceSubscriptionId: 88,
-      origin: 'https://app.example.com',
-      isMobile: false,
-      isWechatBrowser: false,
-    })).toMatchObject({
-      amount: 525,
-      order_type: 'subscription_upgrade',
-      plan_id: 40,
-      source_subscription_id: 88,
-    })
-  })
-
   it('passes is_mobile: false when forceQRCode is enabled for alipay', () => {
     expect(buildCreateOrderPayload({
       amount: 50,
@@ -332,6 +342,21 @@ describe('buildCreateOrderPayload', () => {
       forceQRCode: true,
     })).toMatchObject({
       is_mobile: false,
+    })
+  })
+
+  it('keeps is_mobile true when mobile precreate takes priority over forceQRCode', () => {
+    expect(buildCreateOrderPayload({
+      amount: 50,
+      paymentType: 'alipay',
+      orderType: 'balance',
+      origin: 'https://app.example.com',
+      isMobile: true,
+      isWechatBrowser: false,
+      forceQRCode: true,
+      mobilePrecreateDeepLink: true,
+    })).toMatchObject({
+      is_mobile: true,
     })
   })
 

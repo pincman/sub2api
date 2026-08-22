@@ -71,22 +71,6 @@
                 {{ t(`userSubscriptions.status.${subscription.status}`) }}
               </span>
               <button
-                v-if="isCheckingUpgrade(subscription)"
-                type="button"
-                disabled
-                class="rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 opacity-60 dark:border-primary-800 dark:text-primary-400"
-              >
-                {{ t('common.loading') }}
-              </button>
-              <button
-                v-else-if="canUpgrade(subscription)"
-                type="button"
-                class="rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-600 transition-colors hover:bg-primary-50 dark:border-primary-800 dark:text-primary-400 dark:hover:bg-primary-950/30"
-                @click="openUpgrade(subscription)"
-              >
-                {{ t('payment.upgradePlan') }}
-              </button>
-              <button
                 v-if="subscription.status === 'active'"
                 :class="['rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors', platformButtonClass(subscription.group?.platform || '')]"
                 @click="router.push({ path: '/purchase', query: { tab: 'subscription', group: String(subscription.group_id) } })"
@@ -269,14 +253,18 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
-import { paymentAPI } from '@/api/payment'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateOnly } from '@/utils/format'
+import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
-import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import {
+  getExpirationDateRelation,
+  getRemainingDurationParts,
+  isOneTimeDailyQuota,
+  type RemainingDurationParts
+} from '@/utils/subscriptionQuota'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -294,8 +282,6 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
-const upgradeAvailability = ref<Record<number, boolean>>({})
-const upgradeChecking = ref<Record<number, boolean>>({})
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)
@@ -309,45 +295,12 @@ async function loadSubscriptions() {
   try {
     loading.value = true
     subscriptions.value = await subscriptionsAPI.getMySubscriptions()
-    void loadUpgradeAvailability(subscriptions.value)
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
   }
-}
-
-function isUpgradeCandidate(subscription: UserSubscription): boolean {
-  return subscription.status === 'active' && (subscription.group?.monthly_limit_usd ?? 0) > 0
-}
-
-function isCheckingUpgrade(subscription: UserSubscription): boolean {
-  return upgradeChecking.value[subscription.id] === true
-}
-
-function canUpgrade(subscription: UserSubscription): boolean {
-  return upgradeAvailability.value[subscription.id] === true
-}
-
-async function loadUpgradeAvailability(items: UserSubscription[]) {
-  await Promise.all(items.filter(isUpgradeCandidate).map(async (subscription) => {
-    upgradeChecking.value[subscription.id] = true
-    try {
-      const response = await paymentAPI.getSubscriptionUpgradeOptions(subscription.id)
-      upgradeAvailability.value[subscription.id] = (response.data || []).length > 0
-    } catch {
-      // A manually assigned subscription (or one without a higher plan) cannot
-      // establish the original commercial value required for a safe upgrade.
-      upgradeAvailability.value[subscription.id] = false
-    } finally {
-      upgradeChecking.value[subscription.id] = false
-    }
-  }))
-}
-
-function openUpgrade(subscription: UserSubscription) {
-  router.push({ path: '/purchase', query: { tab: 'subscription', upgrade: String(subscription.id) } })
 }
 
 function getProgressWidth(used: number | undefined, limit: number | null | undefined): string {
@@ -369,17 +322,20 @@ function formatExpirationDate(expiresAt: string): string {
   const expires = new Date(expiresAt)
   const diff = expires.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+  const relation = getExpirationDateRelation(expires, now)
 
-  if (days < 0) {
+  if (relation === null) return ''
+
+  if (relation === 'expired') {
     return t('userSubscriptions.status.expired')
   }
 
-  const dateStr = formatDateOnly(expires)
+  const dateStr = formatDateTimeToMinute(expires)
 
-  if (days === 0) {
+  if (relation === 'today') {
     return `${dateStr} (${t('common.today')})`
   }
-  if (days === 1) {
+  if (relation === 'tomorrow') {
     return `${dateStr} (${t('common.tomorrow')})`
   }
 
@@ -392,7 +348,7 @@ function getExpirationClass(expiresAt: string): string {
   const diff = expires.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
 
-  if (days <= 0) return 'text-red-600 dark:text-red-400 font-medium'
+  if (diff <= 0) return 'text-red-600 dark:text-red-400 font-medium'
   if (days <= 3) return 'text-red-600 dark:text-red-400'
   if (days <= 7) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-700 dark:text-gray-300'

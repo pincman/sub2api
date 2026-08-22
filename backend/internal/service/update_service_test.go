@@ -31,17 +31,13 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
-	latestRepo     string
-	recentRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
-	s.latestRepo = repo
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
-	s.recentRepo = repo
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
 	return s.recentReleases, s.recentErr
 }
 
@@ -71,49 +67,6 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrNoUpdateAvailable))
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
-}
-
-type customUpdateDispatcherStub struct {
-	dispatched bool
-	err        error
-}
-
-func (s *customUpdateDispatcherStub) Dispatch(context.Context) error {
-	s.dispatched = true
-	return s.err
-}
-
-func TestUpdateServiceCustomBuildDispatchesOnlyForkReleaseHelper(t *testing.T) {
-	github := &updateServiceGitHubClientStub{
-		release: &GitHubRelease{TagName: "v0.1.160-custom.abc123"},
-	}
-	dispatcher := &customUpdateDispatcherStub{}
-	svc := NewUpdateService(
-		&updateServiceCacheStub{},
-		github,
-		"0.1.159",
-		"custom",
-	)
-	svc.customUpdateDispatcher = dispatcher
-
-	info, err := svc.CheckUpdate(context.Background(), true)
-	require.NoError(t, err)
-	require.True(t, info.HasUpdate)
-	require.Equal(t, customGitHubRepo, github.latestRepo)
-
-	require.ErrorIs(t, svc.PerformUpdate(context.Background()), ErrCustomBuildUpdateDispatched)
-	require.True(t, dispatcher.dispatched)
-
-	require.ErrorIs(t, svc.Rollback(), ErrCustomBuildUpdateDisabled)
-	require.ErrorIs(t, svc.RollbackToVersion(context.Background(), "0.1.158"), ErrCustomBuildUpdateDisabled)
-}
-
-func TestParseVersionHandlesCustomReleaseSuffix(t *testing.T) {
-	require.Equal(t, [3]int{0, 1, 160}, parseVersion("v0.1.160-custom.abc123"))
-	require.Equal(t, [3]int{0, 1, 160}, parseVersion("custom-v0.1.160.abc123"))
-	require.Equal(t, -1, compareVersions("0.1.160", "v0.1.160-custom.abc123"))
-	require.Equal(t, -1, compareVersions("0.1.160-custom.old", "v0.1.160-custom.new"))
-	require.Equal(t, 0, compareVersions("0.1.160-custom.abc123", "v0.1.160-custom.abc123"))
 }
 
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {

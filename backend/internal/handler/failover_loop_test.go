@@ -31,6 +31,35 @@ func (m *mockTempUnscheduler) TempUnscheduleRetryableError(_ context.Context, ac
 	m.calls = append(m.calls, tempUnscheduleCall{accountID: accountID, failoverErr: failoverErr})
 }
 
+func TestSameAccountRetryDelayFor(t *testing.T) {
+	capacityErr := &service.UpstreamFailoverError{RequestScopedTransient: true}
+
+	for _, tc := range []struct {
+		name       string
+		retryCount int
+		want       time.Duration
+	}{
+		{name: "first retry", retryCount: 1, want: 500 * time.Millisecond},
+		{name: "second retry", retryCount: 2, want: time.Second},
+		{name: "third retry", retryCount: 3, want: 2 * time.Second},
+		{name: "fourth retry", retryCount: 4, want: 4 * time.Second},
+		{name: "fifth retry", retryCount: 5, want: 8 * time.Second},
+		{name: "capped retry", retryCount: 10, want: 8 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sameAccountRetryDelayFor(capacityErr, tc.retryCount))
+		})
+	}
+
+	t.Run("non request scoped errors keep fixed delay", func(t *testing.T) {
+		require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayFor(&service.UpstreamFailoverError{}, 10))
+	})
+
+	t.Run("nil error keeps fixed delay", func(t *testing.T) {
+		require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayFor(nil, 10))
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
@@ -271,13 +300,39 @@ func TestHandleFailoverError_BasicSwitch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleFailoverError_CacheBilling(t *testing.T) {
-	t.Run("hasBoundSession为true时设置ForceCacheBilling", func(t *testing.T) {
+	t.Run("hasBoundSession为true且实际切换时设置ForceCacheBilling", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, true) // hasBoundSession=true
 		err := newTestFailoverErr(500, false, false)
 
 		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
 		require.True(t, fs.ForceCacheBilling)
+	})
+
+	t.Run("同账号重试时仅凭hasBoundSession不设置ForceCacheBilling", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, true)
+		err := newTestFailoverErr(400, true, false)
+
+		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
+
+		require.False(t, fs.ForceCacheBilling)
+		require.Zero(t, fs.SwitchCount)
+	})
+
+	t.Run("同账号重试耗尽并实际切换时设置ForceCacheBilling", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, true)
+		err := newTestFailoverErr(400, true, false)
+
+		for i := 0; i < maxSameAccountRetries; i++ {
+			fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
+			require.False(t, fs.ForceCacheBilling)
+		}
+		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
+
+		require.True(t, fs.ForceCacheBilling)
+		require.Equal(t, 1, fs.SwitchCount)
 	})
 
 	t.Run("failoverErr.ForceCacheBilling为true时设置", func(t *testing.T) {
@@ -287,6 +342,17 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 
 		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
 		require.True(t, fs.ForceCacheBilling)
+	})
+
+	t.Run("同账号重试保留显式ForceCacheBilling", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, true)
+		err := newTestFailoverErr(400, true, true)
+
+		fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, err)
+
+		require.True(t, fs.ForceCacheBilling)
+		require.Zero(t, fs.SwitchCount)
 	})
 
 	t.Run("两者均为false时不设置", func(t *testing.T) {
@@ -633,13 +699,14 @@ func TestHandleFailoverError_IntegrationScenario(t *testing.T) {
 		for i := 0; i < maxSameAccountRetries; i++ {
 			action := fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, retryErr)
 			require.Equal(t, FailoverContinue, action)
+			require.False(t, fs.ForceCacheBilling, "同账号重试期间不应仅因绑定会话强制缓存计费")
 		}
-		require.True(t, fs.ForceCacheBilling, "hasBoundSession=true 应设置 ForceCacheBilling")
 
 		// 2. 账号 100 超过重试上限 → TempUnschedule + 切换
 		action := fs.HandleFailoverError(context.Background(), mock, 100, "openai", maxSameAccountRetries, retryErr)
 		require.Equal(t, FailoverContinue, action)
 		require.Equal(t, 1, fs.SwitchCount)
+		require.True(t, fs.ForceCacheBilling, "实际切换账号时应设置 ForceCacheBilling")
 		require.Len(t, mock.calls, 1)
 
 		// 3. 账号 200 遇到不可重试错误 → 直接切换

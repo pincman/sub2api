@@ -118,8 +118,8 @@ jobs:
           name: Sub2API custom ${{ steps.upstream.outputs.upstream_tag }}
           body: >-
             Automated custom release from upstream ${{ steps.upstream.outputs.upstream_tag }}.
-            It includes the subscription-upgrade customization and was built
-            only after frontend and backend tests passed.
+            It includes the configurable balance display currency customization
+            and is built only after frontend and backend tests pass.
           files: |
             ${{ steps.package.outputs.archive }}
             release-dist/checksums.txt

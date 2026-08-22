@@ -4,10 +4,9 @@ import { normalizeVisibleMethod } from '@/components/payment/paymentFlow'
 
 export interface ParsedWechatResumeRoute {
   orderAmount: number
-  orderType: 'balance' | 'subscription' | 'subscription_upgrade'
+  orderType: 'balance' | 'subscription'
   paymentType: string
   planId?: number
-  sourceSubscriptionId?: number
   openid?: string
   wechatResumeToken?: string
 }
@@ -41,12 +40,9 @@ export function parseWechatResumeRoute(
   const paymentType = normalizeVisibleMethod(readQueryString(query, 'payment_type')) || 'wxpay'
   const planId = Number.parseInt(readQueryString(query, 'plan_id'), 10)
   const hasPlanId = Number.isFinite(planId) && planId > 0
-  const sourceSubscriptionId = Number.parseInt(readQueryString(query, 'source_subscription_id'), 10)
-  const hasSourceSubscriptionId = Number.isFinite(sourceSubscriptionId) && sourceSubscriptionId > 0
-  const rawOrderType = readQueryString(query, 'order_type')
-  const orderType = rawOrderType === 'subscription_upgrade' && hasSourceSubscriptionId
-    ? 'subscription_upgrade'
-    : (rawOrderType === 'subscription' || hasPlanId ? 'subscription' : 'balance')
+  const orderType = readQueryString(query, 'order_type') === 'subscription' || hasPlanId
+    ? 'subscription'
+    : 'balance'
 
   if (wechatResumeToken) {
     return {
@@ -55,7 +51,6 @@ export function parseWechatResumeRoute(
       orderType,
       orderAmount: 0,
       planId: hasPlanId ? planId : undefined,
-      sourceSubscriptionId: hasSourceSubscriptionId ? sourceSubscriptionId : undefined,
     }
   }
 
@@ -67,7 +62,7 @@ export function parseWechatResumeRoute(
   const rawAmount = Number.parseFloat(readQueryString(query, 'amount'))
   const orderAmount = Number.isFinite(rawAmount) && rawAmount > 0
     ? rawAmount
-    : (orderType !== 'balance'
+    : (orderType === 'subscription'
       ? (plans.find(plan => plan.id === planId)?.price ?? 0)
       : fallbackBalanceAmount)
 
@@ -77,7 +72,6 @@ export function parseWechatResumeRoute(
     orderType,
     orderAmount,
     planId: hasPlanId ? planId : undefined,
-    sourceSubscriptionId: hasSourceSubscriptionId ? sourceSubscriptionId : undefined,
   }
 }
 
@@ -92,6 +86,5 @@ export function stripWechatResumeQuery(query: LocationQuery): LocationQueryRaw {
   delete nextQuery.amount
   delete nextQuery.order_type
   delete nextQuery.plan_id
-  delete nextQuery.source_subscription_id
   return nextQuery
 }

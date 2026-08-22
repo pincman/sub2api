@@ -387,8 +387,25 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 		require.Contains(t, flushes[1], "response.failed")
 	})
 
-	t.Run("error event", func(t *testing.T) {
+	t.Run("retryable error event buffered until terminal", func(t *testing.T) {
+		// 可重试类 error 帧不算客户端输出：保持在 attempt 缓冲中不单独 flush，
+		// 为随后可能到达的 response.failed 保留 pre-output failover 能力，
+		// 与终止帧一起出站。
 		body := "data: {\"type\":\"error\",\"error\":{\"message\":\"failed\"}}\n\n" +
+			"data: [DONE]\n\n"
+		recorder := newOpenAIResponseFlushRecorder()
+
+		result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		gotBody, flushes := recorder.snapshot()
+		require.Equal(t, body, gotBody)
+		require.Len(t, flushes, 1)
+	})
+
+	t.Run("non-retryable error event flushes at boundary", func(t *testing.T) {
+		body := "data: {\"type\":\"error\",\"error\":{\"code\":\"invalid_request\",\"message\":\"bad request\"}}\n\n" +
 			"data: [DONE]\n\n"
 		recorder := newOpenAIResponseFlushRecorder()
 
@@ -400,6 +417,39 @@ func TestOpenAIResponseFlush_FailedAndErrorEventsFlushAtBoundaries(t *testing.T)
 		require.Equal(t, body, gotBody)
 		require.Len(t, flushes, 2)
 	})
+}
+
+func TestOpenAIResponseFlush_ReusedTypeKeepsSSEBytesAndTerminalSemantics(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		flushCount int
+	}{
+		{
+			name:       "whitespace around done",
+			body:       "data: \t[DONE]  \n\n",
+			flushCount: 1,
+		},
+		{
+			name:       "invalid JSON before done",
+			body:       "data: {\"type\":\n\ndata: [DONE]\n\n",
+			flushCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := newOpenAIResponseFlushRecorder()
+
+			result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(tt.body)), config.GatewayConfig{})
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			gotBody, flushes := recorder.snapshot()
+			require.Equal(t, tt.body, gotBody)
+			require.Len(t, flushes, tt.flushCount)
+		})
+	}
 }
 
 func TestOpenAIResponseFlush_ClientDisconnectStillDrainsUsage(t *testing.T) {

@@ -13,7 +13,6 @@ import type {
   CreateOrderResult,
   PaymentOrder
 } from '@/types/payment'
-import type { SubscriptionUpgradeQuote } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
 export interface PublicOrderVerifyResult {
@@ -33,11 +32,6 @@ export const paymentAPI = {
   /** Get available subscription plans */
   getPlans() {
     return apiClient.get<SubscriptionPlan[]>('/payment/plans')
-  },
-
-  /** Get quota-value based upgrade quotes for an active subscription */
-  getSubscriptionUpgradeOptions(subscriptionId: number) {
-    return apiClient.get<SubscriptionUpgradeQuote[]>(`/payment/subscriptions/${subscriptionId}/upgrade-options`)
   },
 
   /** Get all checkout page data in a single call */

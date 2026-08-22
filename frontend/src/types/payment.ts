@@ -21,7 +21,7 @@ export type OrderStatus =
 
 export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
 
-export type OrderType = 'balance' | 'subscription' | 'subscription_upgrade'
+export type OrderType = 'balance' | 'subscription'
 
 // ==================== Configuration ====================
 
@@ -80,6 +80,8 @@ export interface CheckoutInfoResponse {
   stripe_publishable_key: string
   /** When true, Alipay payments on mobile always show the QR code instead of redirecting */
   alipay_force_qrcode?: boolean
+  /** When true, official Alipay mobile orders use precreate plus an Alipay app deep link */
+  alipay_mobile_precreate_deep_link?: boolean
 }
 
 // ==================== Orders ====================
@@ -105,7 +107,6 @@ export interface PaymentOrder {
   refund_requested_by?: number
   refund_request_reason?: string
   plan_id?: number
-  upgrade_source_subscription_id?: number
   provider_instance_id?: string
 }
 
@@ -137,31 +138,6 @@ export interface SubscriptionPlan {
   features: string[]
   for_sale: boolean
   sort_order: number
-}
-
-export interface SubscriptionUpgradeQuote {
-  source_subscription_id: number
-  source_plan_id: number
-  source_plan_name: string
-  source_group_id: number
-  source_group_name: string
-  source_price: number
-  source_quota: number
-  source_usage: number
-  remaining_quota: number
-  remaining_ratio: number
-  credit_amount: number
-  target_plan_id: number
-  target_plan_name: string
-  target_group_id: number
-  target_group_name: string
-  target_platform: string
-  target_price: number
-  target_quota: number
-  upgrade_amount: number
-  currency?: string
-  validity_days: number
-  new_expires_at: string
 }
 
 export interface PaymentChannel {
@@ -199,7 +175,6 @@ export interface CreateOrderRequest {
   payment_type: string
   order_type: string
   plan_id?: number
-  source_subscription_id?: number
   return_url?: string
   payment_source?: string
   openid?: string
@@ -245,18 +220,39 @@ export interface CreateOrderResult {
   out_trade_no?: string
   payment_mode?: string
   resume_token?: string
+  alipay_mobile_precreate_deep_link?: boolean
   oauth?: WechatOAuthInfo
   jsapi?: WechatJSAPIPayload
   jsapi_payload?: WechatJSAPIPayload
 }
 
+export type CurrencyAmounts = Record<string, number>
+
+export interface DailyPaymentStats {
+  date: string
+  amount: CurrencyAmounts
+  count: number
+}
+
+export interface PaymentMethodStats {
+  type: string
+  amount: CurrencyAmounts
+  count: number
+}
+
+export interface TopUserPaymentStats {
+  user_id: number
+  email: string
+  amount: number
+}
+
 export interface DashboardStats {
-  today_amount: number
-  total_amount: number
+  today_amount: CurrencyAmounts
+  total_amount: CurrencyAmounts
   today_count: number
   total_count: number
-  avg_amount: number
-  daily_series: { date: string; amount: number; count: number }[]
-  payment_methods: { type: string; amount: number; count: number }[]
-  top_users: { user_id: number; email: string; amount: number }[]
+  avg_amount: CurrencyAmounts
+  daily_series: DailyPaymentStats[]
+  payment_methods: PaymentMethodStats[]
+  top_users: Record<string, TopUserPaymentStats[]>
 }
