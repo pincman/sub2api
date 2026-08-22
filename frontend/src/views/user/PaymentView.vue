@@ -34,12 +34,18 @@
         <!-- Tab content (select phase) -->
         <template v-else>
           <!-- Top-up Tab -->
-          <template v-if="activeTab === 'recharge'">
+          <template v-if="activeTab === 'recharge' && !checkout.balance_disabled">
             <!-- Recharge Account Card -->
             <div class="card p-5">
               <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ formatBalanceAmount(user?.balance, balanceDisplayCurrency) }}</p>
+              <div
+                v-if="renderedRechargeDescription"
+                class="recharge-description mt-4 border-t border-gray-100 pt-4 text-sm text-gray-600 dark:border-dark-700 dark:text-gray-300"
+                data-testid="recharge-description"
+                v-html="renderedRechargeDescription"
+              />
             </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
@@ -95,7 +101,7 @@
             </template>
           </template>
           <!-- Subscribe Tab -->
-          <template v-else-if="activeTab === 'subscription'">
+          <template v-else-if="activeTab === 'subscription' && !checkout.subscription_disabled">
             <!-- Subscription confirm (inline, replaces plan list) -->
             <template v-if="selectedPlan">
               <div class="card p-5">
@@ -217,6 +223,10 @@
               </div>
             </template>
           </template>
+          <div v-else class="card py-16 text-center" data-testid="purchase-options-empty">
+            <Icon name="gift" size="xl" class="mx-auto mb-3 text-gray-300 dark:text-dark-600" />
+            <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
+          </div>
         </template>
         <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="card p-4">
           <div class="flex flex-col items-center gap-3">
@@ -260,6 +270,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useAuthStore } from '@/stores/auth'
 import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
@@ -509,7 +521,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, payment_balance_display_currency: '', subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, subscription_disabled: false, recharge_description: '', balance_recharge_multiplier: 1, payment_balance_display_currency: '', subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
 const balanceDisplayCurrency = computed(() => {
@@ -520,8 +532,15 @@ const balanceDisplayCurrency = computed(() => {
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []
   if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
-  result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
+  if (!checkout.value.subscription_disabled) result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
   return result
+})
+
+const renderedRechargeDescription = computed(() => {
+  const description = checkout.value.recharge_description?.trim()
+  if (!description) return ''
+  const html = marked.parse(description, { breaks: true, gfm: true }) as string
+  return DOMPurify.sanitize(html)
 })
 
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
@@ -1080,6 +1099,17 @@ async function resumeWechatPaymentFromQuery() {
     return
   }
 
+  // A stale callback URL must not be able to recreate an order for a purchase
+  // type that the administrator has since disabled.
+  if (resume.orderType === 'balance' && checkout.value.balance_disabled) {
+    await router.replace({ path: route.path, query: stripWechatResumeQuery(route.query) })
+    return
+  }
+  if (resume.orderType === 'subscription' && checkout.value.subscription_disabled) {
+    await router.replace({ path: route.path, query: stripWechatResumeQuery(route.query) })
+    return
+  }
+
   selectedMethod.value = resume.paymentType
   if (resume.orderType === 'balance' && resume.orderAmount > 0) {
     amount.value = resume.orderAmount
@@ -1146,12 +1176,13 @@ onMounted(async () => {
         removeRecoverySnapshot()
       }
     }
-    await resumeWechatPaymentFromQuery()
-    if (checkout.value.balance_disabled) {
-      activeTab.value = 'subscription'
+    const availableTabs = tabs.value.map(tab => tab.key)
+    if (!availableTabs.includes(activeTab.value) && tabs.value[0]) {
+      activeTab.value = tabs.value[0].key
     }
+    await resumeWechatPaymentFromQuery()
     // Handle renewal navigation: ?tab=subscription&group=123
-    if (route.query.tab === 'subscription') {
+    if (route.query.tab === 'subscription' && !checkout.value.subscription_disabled) {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)
@@ -1170,3 +1201,42 @@ onMounted(async () => {
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})
 })
 </script>
+
+<style scoped>
+.recharge-description :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+.recharge-description :deep(p) {
+  @apply mb-2 leading-relaxed;
+}
+
+.recharge-description :deep(ul),
+.recharge-description :deep(ol) {
+  @apply mb-2 ml-5 space-y-1;
+}
+
+.recharge-description :deep(ul) {
+  @apply list-disc;
+}
+
+.recharge-description :deep(ol) {
+  @apply list-decimal;
+}
+
+.recharge-description :deep(a) {
+  @apply font-medium text-primary-600 underline underline-offset-2 dark:text-primary-400;
+}
+
+.recharge-description :deep(strong) {
+  @apply font-semibold text-gray-900 dark:text-white;
+}
+
+.recharge-description :deep(code) {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-700 dark:text-gray-200;
+}
+
+.recharge-description :deep(blockquote) {
+  @apply my-2 border-l-2 border-primary-400 pl-3 text-gray-500 dark:text-gray-400;
+}
+</style>

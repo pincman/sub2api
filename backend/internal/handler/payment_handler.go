@@ -44,6 +44,17 @@ func (h *PaymentHandler) GetPaymentConfig(c *gin.Context) {
 // GetPlans returns subscription plans available for sale.
 // GET /api/v1/payment/plans
 func (h *PaymentHandler) GetPlans(c *gin.Context) {
+	// Keep subscription plans private when subscription sales are disabled. The
+	// admin APIs still expose the plans so they can be edited and re-enabled.
+	cfg, err := h.configService.GetPaymentConfig(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if cfg.SubscriptionDisabled {
+		response.Success(c, make([]any, 0))
+		return
+	}
 	plans, err := h.configService.ListPlansForSale(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -118,8 +129,12 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		}
 	}
 
-	// Fetch plans with group info
-	plans, _ := h.configService.ListPlansForSale(ctx)
+	// Fetch plans with group info. Keep the response shape stable while hiding
+	// all saleable subscription cards when the subscription switch is enabled.
+	plans := make([]*dbent.SubscriptionPlan, 0)
+	if !cfg.SubscriptionDisabled {
+		plans, _ = h.configService.ListPlansForSale(ctx)
+	}
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {
@@ -148,6 +163,8 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		BalanceDisabled:               cfg.BalanceDisabled,
 		BalanceRechargeMultiplier:     cfg.BalanceRechargeMultiplier,
 		PaymentBalanceDisplayCurrency: cfg.BalanceDisplayCurrency,
+		RechargeDescription:           cfg.RechargeDescription,
+		SubscriptionDisabled:          cfg.SubscriptionDisabled,
 		SubscriptionUSDToCNYRate:      cfg.SubscriptionUSDToCNYRate,
 		RechargeFeeRate:               cfg.RechargeFeeRate,
 		HelpText:                      cfg.HelpText,
@@ -166,6 +183,8 @@ type checkoutInfoResponse struct {
 	BalanceDisabled               bool                            `json:"balance_disabled"`
 	BalanceRechargeMultiplier     float64                         `json:"balance_recharge_multiplier"`
 	PaymentBalanceDisplayCurrency string                          `json:"payment_balance_display_currency"`
+	RechargeDescription           string                          `json:"recharge_description"`
+	SubscriptionDisabled          bool                            `json:"subscription_disabled"`
 	SubscriptionUSDToCNYRate      float64                         `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate               float64                         `json:"recharge_fee_rate"`
 	HelpText                      string                          `json:"help_text"`

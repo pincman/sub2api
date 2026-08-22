@@ -119,6 +119,9 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
+		if cfg.SubscriptionDisabled {
+			return nil, infraerrors.Forbidden("SUBSCRIPTION_PAYMENT_DISABLED", "subscription payment has been disabled")
+		}
 		return s.validateSubOrder(ctx, req)
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {

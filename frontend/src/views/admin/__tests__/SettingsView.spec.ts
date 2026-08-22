@@ -198,7 +198,15 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.payment.findProvider": "查看支持的支付方式",
     "admin.settings.payment.balancePaymentDisabled": "禁用余额充值",
     "admin.settings.payment.balancePaymentDisabledHint":
-      "关闭后前台隐藏“充值”页，但保留“订阅”页。",
+      "开启后前台隐藏“充值”页，并拒绝新的余额充值订单。",
+    "admin.settings.payment.subscriptionPaymentDisabled": "禁用订阅购买",
+    "admin.settings.payment.subscriptionPaymentDisabledHint":
+      "开启后前台隐藏“订阅”页和套餐卡片，并拒绝新的订阅订单。",
+    "admin.settings.payment.rechargeDescription": "充值说明（Markdown）",
+    "admin.settings.payment.rechargeDescriptionHint":
+      "显示在充值账户卡片的当前余额下方；留空则不显示。支持 Markdown，保存后对所有用户可见。",
+    "admin.settings.payment.rechargeDescriptionPlaceholder":
+      "- Claude 价格为 ¥1 = $1",
     "admin.settings.openaiExperimentalScheduler.title": "OpenAI 实验调度策略",
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
     "admin.settings.openaiExperimentalScheduler.lowRatePriorityTitle": "低倍率优先",
@@ -486,6 +494,8 @@ const baseSettingsResponse = {
   payment_max_pending_orders: 3,
   payment_enabled_types: [],
   payment_balance_disabled: false,
+  payment_subscription_disabled: false,
+  payment_recharge_description: "",
   payment_balance_recharge_multiplier: 1,
   payment_balance_display_currency: "USD",
   payment_subscription_usd_to_cny_rate: 0,
@@ -802,6 +812,34 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ payment_balance_disabled: true }),
+    );
+  });
+
+  it("submits the subscription toggle and Markdown recharge description", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+
+    const toggle = wrapper.get(
+      '[data-testid="payment-subscription-disabled-toggle"]',
+    );
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+    await toggle.setValue(true);
+
+    const description = wrapper.get(
+      '[data-testid="payment-recharge-description"]',
+    );
+    await description.setValue("- **Claude**：¥1 = $1\n- Grok：¥2 = $1");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_subscription_disabled: true,
+        payment_recharge_description:
+          "- **Claude**：¥1 = $1\n- Grok：¥2 = $1",
+      }),
     );
   });
 

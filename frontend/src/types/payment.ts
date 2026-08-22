@@ -33,6 +33,8 @@ export interface PaymentConfig {
   max_pending_orders: number
   order_timeout_minutes: number
   balance_disabled: boolean
+  subscription_disabled: boolean
+  recharge_description: string
   balance_recharge_multiplier: number
   /** Display-only currency for account balance amounts. */
   balance_display_currency: string
@@ -69,6 +71,9 @@ export interface CheckoutInfoResponse {
   global_max: number
   plans: SubscriptionPlan[]
   balance_disabled: boolean
+  subscription_disabled: boolean
+  /** Admin-authored Markdown shown directly below the current balance. */
+  recharge_description: string
   balance_recharge_multiplier: number
   /** Display-only currency for account balance amounts; does not affect payment settlement. */
   payment_balance_display_currency: string

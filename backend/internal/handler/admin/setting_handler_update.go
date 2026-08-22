@@ -308,6 +308,8 @@ type UpdateSettingsRequest struct {
 	PaymentBalanceDisabled           *bool    `json:"payment_balance_disabled"`
 	PaymentBalanceRechargeMultiplier *float64 `json:"payment_balance_recharge_multiplier"`
 	PaymentBalanceDisplayCurrency    *string  `json:"payment_balance_display_currency"`
+	PaymentRechargeDescription       *string  `json:"payment_recharge_description"`
+	PaymentSubscriptionDisabled      *bool    `json:"payment_subscription_disabled"`
 	PaymentSubscriptionUSDToCNYRate  *float64 `json:"payment_subscription_usd_to_cny_rate"`
 	PaymentRechargeFeeRate           *float64 `json:"payment_recharge_fee_rate"`
 	PaymentLoadBalanceStrat          *string  `json:"payment_load_balance_strategy"`
@@ -2056,6 +2058,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			BalanceDisabled:               req.PaymentBalanceDisabled,
 			BalanceRechargeMultiplier:     req.PaymentBalanceRechargeMultiplier,
 			BalanceDisplayCurrency:        req.PaymentBalanceDisplayCurrency,
+			RechargeDescription:           req.PaymentRechargeDescription,
+			SubscriptionDisabled:          req.PaymentSubscriptionDisabled,
 			SubscriptionUSDToCNYRate:      req.PaymentSubscriptionUSDToCNYRate,
 			RechargeFeeRate:               req.PaymentRechargeFeeRate,
 			LoadBalanceStrategy:           req.PaymentLoadBalanceStrat,
@@ -2333,6 +2337,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentBalanceDisabled:                                 updatedPaymentCfg.BalanceDisabled,
 		PaymentBalanceRechargeMultiplier:                       updatedPaymentCfg.BalanceRechargeMultiplier,
 		PaymentBalanceDisplayCurrency:                          updatedPaymentCfg.BalanceDisplayCurrency,
+		PaymentRechargeDescription:                             updatedPaymentCfg.RechargeDescription,
+		PaymentSubscriptionDisabled:                            updatedPaymentCfg.SubscriptionDisabled,
 		PaymentSubscriptionUSDToCNYRate:                        updatedPaymentCfg.SubscriptionUSDToCNYRate,
 		PaymentRechargeFeeRate:                                 updatedPaymentCfg.RechargeFeeRate,
 		PaymentLoadBalanceStrat:                                updatedPaymentCfg.LoadBalanceStrategy,
@@ -2406,6 +2412,7 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentOrderTimeoutMin != nil || req.PaymentMaxPendingOrders != nil ||
 		req.PaymentEnabledTypes != nil || req.PaymentBalanceDisabled != nil ||
 		req.PaymentBalanceRechargeMultiplier != nil || req.PaymentBalanceDisplayCurrency != nil || req.PaymentSubscriptionUSDToCNYRate != nil ||
+		req.PaymentRechargeDescription != nil || req.PaymentSubscriptionDisabled != nil ||
 		req.PaymentRechargeFeeRate != nil ||
 		req.PaymentLoadBalanceStrat != nil || req.PaymentProductNamePrefix != nil ||
 		req.PaymentProductNameSuffix != nil || req.PaymentHelpImageURL != nil ||

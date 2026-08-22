@@ -105,6 +105,8 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     global_max: 0,
     plans: [],
     balance_disabled: false,
+    subscription_disabled: false,
+    recharge_description: '',
     balance_recharge_multiplier: 1,
     payment_balance_display_currency: 'USD',
     subscription_usd_to_cny_rate: 0,
@@ -277,6 +279,103 @@ async function mountSubscriptionPlanList(planCount: number) {
   await flushPromises()
   return wrapper
 }
+
+async function mountCheckout(
+  checkout: Partial<CheckoutInfoResponse>,
+  query: Record<string, unknown> = {},
+) {
+  vi.useRealTimers()
+  routeState.path = '/purchase'
+  routeState.query = query
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  routerResolve.mockClear()
+  createOrder.mockReset()
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture(checkout))
+  bridgeInvoke.mockReset()
+  window.localStorage.clear()
+  ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
+
+  const wrapper = shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div><slot /></div>',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  return wrapper
+}
+
+describe('PaymentView checkout content settings', () => {
+  it('renders sanitized Markdown directly below the current balance', async () => {
+    const wrapper = await mountCheckout({
+      recharge_description:
+        '- **Claude** 价格为 ¥1 = $1\n- Grok 价格为 ¥2 = $1\n<script>alert("xss")</script>',
+    })
+
+    const description = wrapper.get('[data-testid="recharge-description"]')
+    expect(description.findAll('li')).toHaveLength(2)
+    expect(description.get('strong').text()).toBe('Claude')
+    expect(description.html()).not.toContain('<script')
+    expect(description.html()).not.toContain('alert("xss")')
+  })
+
+  it('hides subscription tabs and plan cards when subscription purchases are disabled', async () => {
+    const plan = checkoutInfoWithPlansFixture().data.plans[0]
+    const wrapper = await mountCheckout(
+      {
+        subscription_disabled: true,
+        plans: [plan],
+      },
+      { tab: 'subscription', group: '3' },
+    )
+
+    expect(wrapper.text()).toContain('payment.rechargeAccount')
+    expect(wrapper.text()).not.toContain('payment.tabSubscribe')
+    expect(wrapper.findAllComponents(SubscriptionPlanCard)).toHaveLength(0)
+  })
+
+  it('does not resume a stale subscription callback after subscriptions are disabled', async () => {
+    await mountCheckout(
+      {
+        subscription_disabled: true,
+      },
+      {
+        wechat_resume: '1',
+        wechat_resume_token: 'stale-subscription-token',
+        order_type: 'subscription',
+        plan_id: '7',
+      },
+    )
+
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(routerReplace).toHaveBeenCalledWith({ path: '/purchase', query: {} })
+  })
+
+  it('shows an empty state when both recharge and subscription purchases are disabled', async () => {
+    const wrapper = await mountCheckout({
+      balance_disabled: true,
+      subscription_disabled: true,
+    })
+
+    expect(wrapper.get('[data-testid="purchase-options-empty"]').text()).toContain(
+      'payment.notAvailable',
+    )
+    expect(wrapper.text()).not.toContain('payment.rechargeAccount')
+    expect(wrapper.findAllComponents(SubscriptionPlanCard)).toHaveLength(0)
+  })
+})
 
 describe('PaymentView subscription plan grid', () => {
   it.each([3, 4, 6])('keeps %i plans on the existing mobile/tablet/desktop grid', async (planCount) => {
