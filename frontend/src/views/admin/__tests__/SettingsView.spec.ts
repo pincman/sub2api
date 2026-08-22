@@ -1075,57 +1075,6 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
   });
 
-  it("loads the configured balance display currency and submits the canonical value", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      payment_balance_display_currency: "CNY",
-    });
-
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openPaymentTab(wrapper);
-
-    const currencySelect = wrapper.findAll("select").find((node) => {
-      const optionValues = node
-        .findAll("option")
-        .map((option) => option.attributes("value"));
-      return optionValues.includes("USD") && optionValues.includes("CNY");
-    });
-
-    expect(currencySelect).toBeDefined();
-    expect((currencySelect?.element as HTMLSelectElement).value).toBe("CNY");
-
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payment_balance_display_currency: "CNY",
-      }),
-    );
-  });
-
-  it("falls back to USD when an unsupported balance display currency is submitted", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      payment_balance_display_currency: "EUR",
-    });
-
-    const wrapper = mountView();
-
-    await flushPromises();
-    await openPaymentTab(wrapper);
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payment_balance_display_currency: "USD",
-      }),
-    );
-  });
-
   it("submits the admin recharge affiliate rebate setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

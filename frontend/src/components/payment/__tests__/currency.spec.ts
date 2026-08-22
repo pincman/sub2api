@@ -26,17 +26,19 @@ describe('currencySymbol', () => {
 })
 
 describe('balance display currency', () => {
-  it('defaults to USD and maps configured ISO codes to symbols', () => {
-    expect(normalizeBalanceDisplayCurrency()).toBe('USD')
+  it('always uses the fixed yuan presentation', () => {
+    expect(normalizeBalanceDisplayCurrency()).toBe('CNY')
     expect(normalizeBalanceDisplayCurrency('cny')).toBe('CNY')
-    expect(normalizeBalanceDisplayCurrency('EUR')).toBe('USD')
-    expect(balanceDisplayCurrencySymbol()).toBe('$')
+    expect(normalizeBalanceDisplayCurrency('USD')).toBe('CNY')
+    expect(normalizeBalanceDisplayCurrency('EUR')).toBe('CNY')
+    expect(balanceDisplayCurrencySymbol()).toBe('¥')
+    expect(balanceDisplayCurrencySymbol('USD')).toBe('¥')
     expect(balanceDisplayCurrencySymbol('CNY')).toBe('¥')
     expect(formatBalanceAmount(12.5, 'CNY')).toBe('¥12.50')
   })
 
   it('does not convert the stored balance value', () => {
-    expect(formatBalanceAmount(12.5, 'USD')).toBe('$12.50')
+    expect(formatBalanceAmount(12.5, 'USD')).toBe('¥12.50')
     expect(formatBalanceAmount(12.5, 'CNY')).not.toBe('¥87.50')
   })
 })

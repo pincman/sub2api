@@ -425,6 +425,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
 import { formatDateLocalInput } from '@/utils/format'
 import { sanitizeUrl } from '@/utils/url'
+import { balanceDisplayCurrencySymbol } from '@/components/payment/currency'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
@@ -648,7 +649,7 @@ const ringItems = computed<RingItem[]>(() => {
       }
     }
     if (!data.subscription && data.balance != null) {
-      items.push({ title: t('keyUsage.walletBalance'), pct: 0, amount: usd(data.balance), isBalance: true, iconType: 'dollar' })
+      items.push({ title: t('keyUsage.walletBalance'), pct: 0, amount: `${balanceDisplayCurrencySymbol()}${Number(data.balance).toFixed(2)}`, isBalance: true, iconType: 'dollar' })
     }
   }
 
