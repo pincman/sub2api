@@ -1,9 +1,9 @@
 export const DEFAULT_PAYMENT_CURRENCY = 'CNY'
 /**
- * Balance values are stored in the service's accounting currency. The display
- * choice is presentation-only and intentionally does not convert numbers.
+ * Balance values are stored in the service's accounting currency. The site
+ * presents those amounts with a fixed yuan symbol and never converts them.
  */
-export const DEFAULT_BALANCE_DISPLAY_CURRENCY = 'USD'
+export const DEFAULT_BALANCE_DISPLAY_CURRENCY = 'CNY'
 
 const PAYMENT_CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
@@ -31,12 +31,13 @@ export function normalizePaymentCurrency(currency?: string | null): string {
   return /^[A-Z]{3}$/.test(normalized) ? normalized : DEFAULT_PAYMENT_CURRENCY
 }
 
-/** Normalize the administrator's balance display preference. */
-export function normalizeBalanceDisplayCurrency(currency?: string | null): string {
-  const normalized = String(currency || '').trim().toUpperCase()
-  return normalized === 'USD' || normalized === 'CNY'
-    ? normalized
-    : DEFAULT_BALANCE_DISPLAY_CURRENCY
+/**
+ * Balance presentation is intentionally fixed to yuan across the frontend.
+ * Keep this helper so existing balance views share the same behaviour without
+ * depending on a server-side presentation setting.
+ */
+export function normalizeBalanceDisplayCurrency(_currency?: string | null): string {
+  return DEFAULT_BALANCE_DISPLAY_CURRENCY
 }
 
 export function currencySymbol(currency?: string | null): string {
@@ -44,9 +45,9 @@ export function currencySymbol(currency?: string | null): string {
   return PAYMENT_CURRENCY_SYMBOLS[normalized] || normalized
 }
 
-/** Resolve the symbol used on balance/recharge-facing screens. */
-export function balanceDisplayCurrencySymbol(currency?: string | null): string {
-  return currencySymbol(normalizeBalanceDisplayCurrency(currency))
+/** Resolve the fixed symbol used on balance and recharge-facing screens. */
+export function balanceDisplayCurrencySymbol(_currency?: string | null): string {
+  return '¥'
 }
 
 /**
