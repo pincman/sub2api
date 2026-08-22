@@ -1,0 +1,127 @@
+name: Sync upstream and publish custom release
+
+on:
+  push:
+    branches:
+      - custom/subscription-upgrade
+  schedule:
+    # Check for a new stable upstream release every hour. GitHub may delay
+    # scheduled jobs, so this is intentionally an extra safety net rather
+    # than the only release trigger.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-custom-release
+  cancel-in-progress: true
+
+jobs:
+  sync-test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the custom branch
+        uses: actions/checkout@v6
+        with:
+          ref: custom/subscription-upgrade
+          fetch-depth: 0
+
+      - name: Fetch and merge the latest stable upstream release
+        id: upstream
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'sub2api custom release bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch upstream --tags --prune
+
+          upstream_tag="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)"
+          test -n "$upstream_tag"
+          upstream_version="${upstream_tag#v}"
+          echo "upstream_tag=$upstream_tag" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "$upstream_tag" HEAD; then
+            echo 'Upstream stable release is already included in the custom branch.'
+          else
+            git merge --no-ff "$upstream_tag" -m "chore: merge upstream $upstream_tag into custom build"
+            git push origin HEAD:custom/subscription-upgrade
+          fi
+
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_commit=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Test and build frontend
+        working-directory: frontend
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm lint:check
+          pnpm typecheck
+          pnpm test:run
+          pnpm build
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+      - name: Build verified custom Linux release
+        id: package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          custom_version='${{ steps.upstream.outputs.upstream_version }}-custom.${{ steps.upstream.outputs.short_commit }}'
+          archive="sub2api_${custom_version}_linux_amd64.tar.gz"
+          mkdir -p release-dist
+          (
+            cd backend
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+              -tags embed -trimpath \
+              -ldflags "-s -w -X main.Version=${custom_version} -X main.Commit=${{ steps.upstream.outputs.commit }} -X main.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.BuildType=custom" \
+              -o ../release-dist/sub2api \
+              ./cmd/server
+          )
+          tar -C release-dist -czf "release-dist/$archive" sub2api
+          (
+            cd release-dist
+            sha256sum "$archive" > checksums.txt
+          )
+          echo "tag=v${custom_version}" >> "$GITHUB_OUTPUT"
+          echo "archive=release-dist/$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Create immutable fork release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag }}
+          target_commitish: ${{ steps.upstream.outputs.commit }}
+          name: Sub2API custom ${{ steps.upstream.outputs.upstream_tag }}
+          body: >-
+            Automated custom release from upstream ${{ steps.upstream.outputs.upstream_tag }}.
+            It includes the configurable balance display currency customization
+            and is built only after frontend and backend tests pass.
+          files: |
+            ${{ steps.package.outputs.archive }}
+            release-dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
