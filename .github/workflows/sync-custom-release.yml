@@ -68,7 +68,6 @@ jobs:
       - name: Test and build frontend
         working-directory: frontend
         run: |
-          corepack enable
           pnpm install --frozen-lockfile
           pnpm lint:check
           pnpm typecheck
