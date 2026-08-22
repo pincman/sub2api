@@ -8,13 +8,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -25,17 +23,18 @@ import (
 )
 
 var (
-	ErrNoUpdateAvailable           = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
-	ErrRollbackVersionNotAllowed   = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
-	ErrCustomBuildUpdateDisabled   = infraerrors.Conflict("CUSTOM_BUILD_UPDATE_DISABLED", "rollback from an official release is disabled for this custom build; use the verified custom backup instead")
-	ErrCustomBuildUpdateDispatched = errors.New("custom build update dispatched")
+	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
+	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
 )
 
 const (
-	updateCacheKey     = "update_check_cache"
-	updateCacheTTL     = 1200 // 20 minutes
-	upstreamGitHubRepo = "Wei-Shaw/sub2api"
-	customGitHubRepo   = "pincman/sub2api"
+	updateCacheKey = "update_check_cache"
+	updateCacheTTL = 1200 // 20 minutes
+	// Official release builds follow the upstream repository. Custom builds
+	// published by this fork must follow the fork so an in-place update never
+	// replaces the custom frontend/backend with an upstream-only binary.
+	officialGithubRepo = "Wei-Shaw/sub2api"
+	customGithubRepo   = "pincman/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -48,14 +47,7 @@ const (
 	maxRollbackVersions = 3
 	// Fetch a few extra releases so filtering (current/newer/prerelease) still leaves enough candidates
 	rollbackFetchPageSize = 15
-
-	// The web process runs with NoNewPrivileges=true. A root-owned systemd path
-	// unit watches this file and starts the fixed custom-update helper whenever
-	// an administrator requests an update.
-	customUpdateRequestPath = "/opt/sub2api/.custom-update-request"
 )
-
-var semverPrefixPattern = regexp.MustCompile(`^(?:custom-)?v?(\d+)\.(\d+)\.(\d+)`)
 
 // UpdateCache defines cache operations for update service
 type UpdateCache interface {
@@ -71,50 +63,27 @@ type GitHubReleaseClient interface {
 	FetchChecksumFile(ctx context.Context, url string) ([]byte, error)
 }
 
-// CustomUpdateDispatcher starts the root-owned custom update helper. The
-// helper is deliberately parameterless: it can only download the verified
-// latest release from this fork, create a complete backup, and run the
-// deployment health checks. The web process never receives root privileges.
-type CustomUpdateDispatcher interface {
-	Dispatch(ctx context.Context) error
-}
-
-type fileSignalCustomUpdateDispatcher struct{}
-
-func (fileSignalCustomUpdateDispatcher) Dispatch(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	request := []byte(fmt.Sprintf("requested_at_utc=%s\n", time.Now().UTC().Format(time.RFC3339Nano)))
-	if err := os.WriteFile(customUpdateRequestPath, request, 0600); err != nil {
-		return fmt.Errorf("signal verified custom update helper: %w", err)
-	}
-	return nil
-}
-
 // UpdateService handles software updates
 type UpdateService struct {
-	cache                  UpdateCache
-	githubClient           GitHubReleaseClient
-	currentVersion         string
-	buildType              string // "source" for manual builds, "release" for CI builds
-	releaseRepo            string
-	customUpdateDispatcher CustomUpdateDispatcher
+	cache          UpdateCache
+	githubClient   GitHubReleaseClient
+	githubRepo     string
+	currentVersion string
+	buildType      string // "source" for manual builds, "release"/"custom" for CI builds
 }
 
 // NewUpdateService creates a new UpdateService
 func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, version, buildType string) *UpdateService {
-	releaseRepo := upstreamGitHubRepo
+	repo := officialGithubRepo
 	if strings.EqualFold(strings.TrimSpace(buildType), "custom") {
-		releaseRepo = customGitHubRepo
+		repo = customGithubRepo
 	}
 	return &UpdateService{
-		cache:                  cache,
-		githubClient:           githubClient,
-		currentVersion:         version,
-		buildType:              buildType,
-		releaseRepo:            releaseRepo,
-		customUpdateDispatcher: fileSignalCustomUpdateDispatcher{},
+		cache:          cache,
+		githubClient:   githubClient,
+		githubRepo:     repo,
+		currentVersion: version,
+		buildType:      buildType,
 	}
 }
 
@@ -126,7 +95,7 @@ type UpdateInfo struct {
 	ReleaseInfo    *ReleaseInfo `json:"release_info,omitempty"`
 	Cached         bool         `json:"cached"`
 	Warning        string       `json:"warning,omitempty"`
-	BuildType      string       `json:"build_type"` // "source" or "release"
+	BuildType      string       `json:"build_type"` // "source", "release", or "custom"
 }
 
 // ReleaseInfo contains GitHub release details
@@ -204,15 +173,6 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 // PerformUpdate downloads and applies the update
 // Uses atomic file replacement pattern for safe in-place updates
 func (s *UpdateService) PerformUpdate(ctx context.Context) error {
-	if s.isCustomBuild() {
-		if s.customUpdateDispatcher == nil {
-			return fmt.Errorf("custom update helper is not configured")
-		}
-		if err := s.customUpdateDispatcher.Dispatch(ctx); err != nil {
-			return err
-		}
-		return ErrCustomBuildUpdateDispatched
-	}
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
 		return err
@@ -331,9 +291,6 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
-	if s.isCustomBuild() {
-		return ErrCustomBuildUpdateDisabled
-	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -380,9 +337,6 @@ func (s *UpdateService) ListRollbackVersions(ctx context.Context) ([]RollbackVer
 // The target must be one of the versions returned by ListRollbackVersions;
 // anything else (including the current version) is rejected.
 func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) error {
-	if s.isCustomBuild() {
-		return ErrCustomBuildUpdateDisabled
-	}
 	target := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if target == "" {
 		return ErrRollbackVersionNotAllowed
@@ -416,14 +370,10 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 	return s.applyReleaseAssets(ctx, assets)
 }
 
-func (s *UpdateService) isCustomBuild() bool {
-	return strings.EqualFold(strings.TrimSpace(s.buildType), "custom")
-}
-
 // fetchRollbackCandidates fetches recent releases and keeps the newest
 // maxRollbackVersions entries strictly older than the current version.
 func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
-	releases, err := s.githubClient.FetchRecentReleases(ctx, s.releaseRepo, rollbackFetchPageSize)
+	releases, err := s.githubClient.FetchRecentReleases(ctx, s.githubRepo, rollbackFetchPageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +410,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
-	release, err := s.githubClient.FetchLatestRelease(ctx, s.releaseRepo)
+	release, err := s.githubClient.FetchLatestRelease(ctx, s.githubRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +429,7 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  latestVersion,
-		HasUpdate:      compareVersions(s.currentVersion, latestVersion) < 0,
+		HasUpdate:      hasNewerRelease(s.currentVersion, latestVersion, s.buildType),
 		ReleaseInfo: &ReleaseInfo{
 			Name:        release.Name,
 			Body:        release.Body,
@@ -663,9 +613,17 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
+		Repository  string       `json:"repository"`
 	}
 	if err := json.Unmarshal([]byte(data), &cached); err != nil {
 		return nil, err
+	}
+	// The cache is shared through Redis. Older binaries and other build
+	// variants may have populated it with a release from a different source.
+	// Treat missing/foreign repository metadata as a miss so a custom build
+	// cannot silently inherit the official release (or download it later).
+	if cached.Repository != s.githubRepo {
+		return nil, fmt.Errorf("update cache belongs to %q, want %q", cached.Repository, s.githubRepo)
 	}
 
 	if time.Now().Unix()-cached.Timestamp > updateCacheTTL {
@@ -675,7 +633,7 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
+		HasUpdate:      hasNewerRelease(s.currentVersion, cached.Latest, s.buildType),
 		ReleaseInfo:    cached.ReleaseInfo,
 		Cached:         true,
 		BuildType:      s.buildType,
@@ -687,10 +645,12 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
+		Repository  string       `json:"repository"`
 	}{
 		Latest:      info.LatestVersion,
 		ReleaseInfo: info.ReleaseInfo,
 		Timestamp:   time.Now().Unix(),
+		Repository:  s.githubRepo,
 	}
 
 	data, _ := json.Marshal(cacheData)
@@ -710,32 +670,80 @@ func compareVersions(current, latest string) int {
 			return 1
 		}
 	}
-	// Custom releases carry the upstream version plus the tested custom commit.
-	// A manually deployed custom build without that suffix must adopt the first
-	// matching fork release, and later custom commits on the same upstream base
-	// must remain installable as well.
-	if isCustomReleaseVersion(latest) && strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v") {
-		return -1
-	}
 	return 0
 }
 
-func isCustomReleaseVersion(v string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(v)), "-custom.")
+// hasNewerRelease reports whether latest should be offered as an update for
+// the current build. compareVersions intentionally compares only the stable
+// x.y.z portion, because build metadata must not make an official release
+// appear older or newer. Custom releases are different: the fork publishes
+// multiple immutable tags for the same upstream version (for example,
+// 0.1.179-custom.<commit>). In that case the latest GitHub release endpoint
+// already provides chronological ordering, so a different custom tag at the
+// same stable version is an update. An official tag at the same version is
+// never accepted as an update for a custom build, which prevents replacing a
+// customized binary with the upstream artifact.
+func hasNewerRelease(current, latest, buildType string) bool {
+	latestTag := normalizeVersionTag(latest)
+	isCustomBuild := strings.EqualFold(strings.TrimSpace(buildType), "custom")
+	// Keep release sources isolated even if a stale/misconfigured cache or API
+	// response contains a tag from the other repository.
+	if isCustomBuild != isCustomReleaseTag(latestTag) {
+		return false
+	}
+
+	comparison := compareVersions(current, latest)
+	if comparison < 0 {
+		return true
+	}
+	if comparison > 0 {
+		return false
+	}
+
+	if !isCustomBuild {
+		return false
+	}
+
+	currentTag := normalizeVersionTag(current)
+	if currentTag == latestTag {
+		return false
+	}
+
+	// Only a custom release from the custom repository can supersede a custom
+	// build at the same stable version. If GitHub ever returns an official tag
+	// here, keep the custom binary in place.
+	return isCustomReleaseTag(latestTag)
+}
+
+func normalizeVersionTag(version string) string {
+	return strings.TrimSpace(strings.TrimPrefix(version, "v"))
+}
+
+func isCustomReleaseTag(version string) bool {
+	version = strings.ToLower(normalizeVersionTag(version))
+	suffix := strings.IndexByte(version, '-')
+	if suffix < 0 {
+		return false
+	}
+	suffixText := version[suffix+1:]
+	return suffixText == "custom" || strings.HasPrefix(suffixText, "custom.")
 }
 
 func parseVersion(v string) [3]int {
-	result := [3]int{0, 0, 0}
-	match := semverPrefixPattern.FindStringSubmatch(strings.TrimSpace(v))
-	if len(match) != 4 {
-		return result
+	v = normalizeVersionTag(v)
+	// Custom releases append build metadata (for example
+	// 0.1.179-custom.a800c61a94a5). Compare the stable semantic version only;
+	// otherwise strconv.Atoi would reject the patch component and treat it as
+	// zero, making every custom build appear years out of date.
+	if suffix := strings.IndexAny(v, "-+"); suffix >= 0 {
+		v = v[:suffix]
 	}
-	for i := 0; i < 3; i++ {
-		parsed, err := strconv.Atoi(match[i+1])
-		if err != nil {
-			return [3]int{0, 0, 0}
+	parts := strings.Split(v, ".")
+	result := [3]int{0, 0, 0}
+	for i := 0; i < len(parts) && i < 3; i++ {
+		if parsed, err := strconv.Atoi(parts[i]); err == nil {
+			result[i] = parsed
 		}
-		result[i] = parsed
 	}
 	return result
 }
