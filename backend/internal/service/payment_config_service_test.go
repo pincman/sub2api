@@ -113,11 +113,24 @@ func TestParsePaymentConfig(t *testing.T) {
 		if cfg.LoadBalanceStrategy != payment.DefaultLoadBalanceStrategy {
 			t.Fatalf("expected LoadBalanceStrategy=%s, got %q", payment.DefaultLoadBalanceStrategy, cfg.LoadBalanceStrategy)
 		}
+		if cfg.BalanceDisplayCurrency != DefaultPaymentBalanceDisplayCurrency {
+			t.Fatalf("expected BalanceDisplayCurrency=%s, got %q", DefaultPaymentBalanceDisplayCurrency, cfg.BalanceDisplayCurrency)
+		}
 		if len(cfg.EnabledTypes) != 0 {
 			t.Fatalf("expected empty EnabledTypes, got %v", cfg.EnabledTypes)
 		}
 		if cfg.AlipayMobilePrecreateDeepLink {
 			t.Fatal("expected AlipayMobilePrecreateDeepLink=false by default")
+		}
+	})
+
+	t.Run("balance display currency is normalized and invalid stored values fall back", func(t *testing.T) {
+		t.Parallel()
+		if got := svc.parsePaymentConfig(map[string]string{SettingPaymentBalanceDisplayCurrency: " cny "}).BalanceDisplayCurrency; got != "CNY" {
+			t.Fatalf("normalized display currency = %q, want CNY", got)
+		}
+		if got := svc.parsePaymentConfig(map[string]string{SettingPaymentBalanceDisplayCurrency: "EUR"}).BalanceDisplayCurrency; got != DefaultPaymentBalanceDisplayCurrency {
+			t.Fatalf("invalid stored display currency = %q, want %s", got, DefaultPaymentBalanceDisplayCurrency)
 		}
 	})
 
@@ -472,6 +485,74 @@ func TestUpdatePaymentConfig_PersistsVisibleMethodRouting(t *testing.T) {
 	}
 	if repo.values[SettingPaymentVisibleMethodWxpaySource] != VisibleMethodSourceOfficialWechat {
 		t.Fatalf("wxpay source = %q, want %q", repo.values[SettingPaymentVisibleMethodWxpaySource], VisibleMethodSourceOfficialWechat)
+	}
+}
+
+func TestUpdatePaymentConfig_PersistsAndValidatesBalanceDisplayCurrency(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{}}
+	svc := &PaymentConfigService{settingRepo: repo}
+
+	currency := " cny "
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{BalanceDisplayCurrency: &currency}); err != nil {
+		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
+	}
+	if got := repo.values[SettingPaymentBalanceDisplayCurrency]; got != "CNY" {
+		t.Fatalf("stored display currency = %q, want CNY", got)
+	}
+
+	invalid := "EUR"
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{BalanceDisplayCurrency: &invalid}); err == nil {
+		t.Fatal("expected invalid display currency to fail")
+	}
+}
+
+func TestUpdatePaymentConfig_OmittedBalanceDisplayCurrencyPreservesExistingValue(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{
+		SettingPaymentBalanceDisplayCurrency: "CNY",
+	}}
+	svc := &PaymentConfigService{settingRepo: repo}
+	enabled := true
+
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{Enabled: &enabled}); err != nil {
+		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
+	}
+	if got := repo.values[SettingPaymentBalanceDisplayCurrency]; got != "CNY" {
+		t.Fatalf("omitted display currency = %q, want existing CNY", got)
+	}
+	if _, ok := repo.updates[SettingPaymentBalanceDisplayCurrency]; ok {
+		t.Fatal("omitted display currency should not be included in the update map")
+	}
+}
+
+func TestNormalizePaymentBalanceDisplayCurrency(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty defaults to USD", input: "", want: "USD"},
+		{name: "USD", input: " usd ", want: "USD"},
+		{name: "CNY", input: "cNy", want: "CNY"},
+		{name: "unsupported", input: "EUR", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizePaymentBalanceDisplayCurrency(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

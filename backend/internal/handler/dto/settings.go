@@ -272,6 +272,7 @@ type SystemSettings struct {
 	PaymentEnabledTypes              []string `json:"payment_enabled_types"`
 	PaymentBalanceDisabled           bool     `json:"payment_balance_disabled"`
 	PaymentBalanceRechargeMultiplier float64  `json:"payment_balance_recharge_multiplier"`
+	PaymentBalanceDisplayCurrency    string   `json:"payment_balance_display_currency"`
 	PaymentSubscriptionUSDToCNYRate  float64  `json:"payment_subscription_usd_to_cny_rate"`
 	PaymentRechargeFeeRate           float64  `json:"payment_recharge_fee_rate"`
 	PaymentLoadBalanceStrat          string   `json:"payment_load_balance_strategy"`
@@ -400,6 +401,7 @@ type PublicSettings struct {
 	GoogleOAuthEnabled                  bool                     `json:"google_oauth_enabled"`
 	BackendModeEnabled                  bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                      bool                     `json:"payment_enabled"`
+	PaymentBalanceDisplayCurrency       string                   `json:"payment_balance_display_currency"`
 	Version                             string                   `json:"version"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移，如 "Asia/Shanghai" / "+08:00"）。
 	// 高峰时段等按服务器本地时间判定的窗口，前端展示时据此标注，避免用户按浏览器本地时间误读。

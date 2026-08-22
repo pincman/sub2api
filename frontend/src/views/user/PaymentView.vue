@@ -39,7 +39,7 @@
             <div class="card p-5">
               <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
-              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
+              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ formatBalanceAmount(user?.balance, balanceDisplayCurrency) }}</p>
             </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
@@ -51,6 +51,7 @@
                 :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
                 :min="globalMinAmount"
                 :max="globalMaxAmount"
+                :currency="balanceDisplayCurrency"
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
@@ -77,7 +78,7 @@
                 </div>
                 <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                  <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
+                  <span class="text-gray-900 dark:text-white">{{ formatBalanceAmount(creditedAmount, balanceDisplayCurrency) }}</span>
                 </div>
                 <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
@@ -287,7 +288,13 @@ import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, pl
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import {
+  DEFAULT_PAYMENT_CURRENCY,
+  formatBalanceAmount,
+  formatPaymentAmount,
+  normalizeBalanceDisplayCurrency,
+  normalizePaymentCurrency,
+} from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
@@ -502,7 +509,12 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, payment_balance_display_currency: '', subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+})
+
+const balanceDisplayCurrency = computed(() => {
+  const checkoutCurrency = checkout.value.payment_balance_display_currency
+  return normalizeBalanceDisplayCurrency(checkoutCurrency || appStore.cachedPublicSettings?.payment_balance_display_currency)
 })
 
 const tabs = computed(() => {

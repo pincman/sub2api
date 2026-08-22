@@ -261,6 +261,7 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { formatBalanceAmount, normalizeBalanceDisplayCurrency } from '@/components/payment/currency'
 
 const router = useRouter()
 const route = useRoute()
@@ -280,6 +281,9 @@ const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
 const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
+const balanceDisplayCurrency = computed(() => normalizeBalanceDisplayCurrency(
+  appStore.cachedPublicSettings?.payment_balance_display_currency,
+))
 const balanceAvailableText = computed(() => t('common.availableBalance') === 'common.availableBalance' ? '可用余额' : t('common.availableBalance'))
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
@@ -362,8 +366,7 @@ function handleReplayGuide() {
 }
 
 function formatHeaderMoney(value: number) {
-  if (!Number.isFinite(value)) return '$0.00'
-  return `$${value.toFixed(2)}`
+  return formatBalanceAmount(value, balanceDisplayCurrency.value)
 }
 
 function handleClickOutside(event: MouseEvent) {

@@ -31,7 +31,7 @@
           <div class="flex-shrink-0 text-right">
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
             <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ user.balance?.toFixed(2) || '0.00' }}
+              {{ formatBalanceAmount(user.balance, balanceDisplayCurrency) }}
             </p>
           </div>
         </div>
@@ -42,7 +42,7 @@
             <template v-else>&nbsp;</template>
           </p>
           <p class="ml-4 flex-shrink-0 text-xs text-gray-500 dark:text-dark-400">
-            {{ t('admin.users.totalRecharged') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ totalRecharged.toFixed(2) }}</span>
+            {{ t('admin.users.totalRecharged') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{ formatBalanceAmount(totalRecharged, balanceDisplayCurrency) }}</span>
           </p>
         </div>
       </div>
@@ -177,13 +177,16 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
+import { useAppStore } from '@/stores/app'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { formatBalanceAmount, normalizeBalanceDisplayCurrency } from '@/components/payment/currency'
 
 const props = defineProps<{ show: boolean; user: AdminUser | null; hideActions?: boolean }>()
 const emit = defineEmits(['close', 'deposit', 'withdraw'])
 const { t } = useI18n()
+const appStore = useAppStore()
 
 const history = ref<BalanceHistoryItem[]>([])
 const loading = ref(false)
@@ -194,6 +197,9 @@ const pageSize = 15
 const typeFilter = ref('')
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
+const balanceDisplayCurrency = computed(() => normalizeBalanceDisplayCurrency(
+  appStore.cachedPublicSettings?.payment_balance_display_currency,
+))
 
 // Type filter options
 const typeOptions = computed(() => [
@@ -313,8 +319,8 @@ const getItemTitle = (item: BalanceHistoryItem) => {
 // Format display value
 const formatValue = (item: BalanceHistoryItem) => {
   if (isBalanceType(item.type)) {
-    const sign = item.value >= 0 ? '+' : ''
-    return `${sign}$${item.value.toFixed(2)}`
+    const sign = item.value >= 0 ? '+' : '-'
+    return `${sign}${formatBalanceAmount(Math.abs(item.value), balanceDisplayCurrency.value)}`
   }
   if (isSubscriptionType(item.type)) {
     const days = item.validity_days || Math.round(item.value)

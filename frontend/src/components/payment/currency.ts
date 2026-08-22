@@ -1,4 +1,9 @@
 export const DEFAULT_PAYMENT_CURRENCY = 'CNY'
+/**
+ * Balance values are stored in the service's accounting currency. The display
+ * choice is presentation-only and intentionally does not convert numbers.
+ */
+export const DEFAULT_BALANCE_DISPLAY_CURRENCY = 'USD'
 
 const PAYMENT_CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
@@ -26,9 +31,36 @@ export function normalizePaymentCurrency(currency?: string | null): string {
   return /^[A-Z]{3}$/.test(normalized) ? normalized : DEFAULT_PAYMENT_CURRENCY
 }
 
+/** Normalize the administrator's balance display preference. */
+export function normalizeBalanceDisplayCurrency(currency?: string | null): string {
+  const normalized = String(currency || '').trim().toUpperCase()
+  return normalized === 'USD' || normalized === 'CNY'
+    ? normalized
+    : DEFAULT_BALANCE_DISPLAY_CURRENCY
+}
+
 export function currencySymbol(currency?: string | null): string {
   const normalized = normalizePaymentCurrency(currency)
   return PAYMENT_CURRENCY_SYMBOLS[normalized] || normalized
+}
+
+/** Resolve the symbol used on balance/recharge-facing screens. */
+export function balanceDisplayCurrencySymbol(currency?: string | null): string {
+  return currencySymbol(normalizeBalanceDisplayCurrency(currency))
+}
+
+/**
+ * Format a balance amount with the configured display symbol.
+ * This intentionally does not perform a currency conversion.
+ */
+export function formatBalanceAmount(
+  amount: number | null | undefined,
+  currency?: string | null,
+  fractionDigits = 2,
+): string {
+  const safeAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0
+  const digits = Number.isInteger(fractionDigits) && fractionDigits >= 0 ? fractionDigits : 2
+  return `${balanceDisplayCurrencySymbol(currency)}${safeAmount.toFixed(digits)}`
 }
 
 function paymentCurrencyFractionDigits(currency: string): number {

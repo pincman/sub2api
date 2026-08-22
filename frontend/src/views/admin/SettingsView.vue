@@ -7937,6 +7937,23 @@
                     </p>
                   </div>
                 </div>
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label class="input-label">{{
+                      t("admin.settings.payment.balanceDisplayCurrency")
+                    }}</label>
+                    <Select
+                      v-model="form.payment_balance_display_currency"
+                      :options="balanceDisplayCurrencyOptions"
+                      class="w-full"
+                    />
+                    <p class="mt-0.5 text-xs text-gray-400">
+                      {{
+                        t("admin.settings.payment.balanceDisplayCurrencyHint")
+                      }}
+                    </p>
+                  </div>
+                </div>
                 <!-- Row 3: Pending orders + load balance + cancel rate limit (all in one row) -->
                 <div class="flex flex-wrap items-end gap-4">
                   <div class="w-28">
@@ -9529,6 +9546,7 @@ const form = reactive<SettingsForm>({
   payment_order_timeout_minutes: 30,
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_balance_display_currency: "USD",
   payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
   payment_enabled_types: [],
@@ -11332,6 +11350,8 @@ async function saveSettings() {
       payment_balance_disabled: form.payment_balance_disabled,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
+      payment_balance_display_currency:
+        form.payment_balance_display_currency === "CNY" ? "CNY" : "USD",
       payment_subscription_usd_to_cny_rate:
         Number(form.payment_subscription_usd_to_cny_rate) || 0,
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
@@ -12206,6 +12226,17 @@ const loadBalanceOptions = computed(() => [
   {
     value: "least-amount",
     label: t("admin.settings.payment.strategyLeastAmount"),
+  },
+]);
+
+const balanceDisplayCurrencyOptions = computed(() => [
+  {
+    value: "USD",
+    label: t("admin.settings.payment.balanceDisplayCurrencyUsd"),
+  },
+  {
+    value: "CNY",
+    label: t("admin.settings.payment.balanceDisplayCurrencyCny"),
   },
 ]);
 

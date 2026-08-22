@@ -242,6 +242,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAICodexVersionAutoSyncEnabled:                  "true",
 		SettingPaymentVisibleMethodAlipaySource:                      "",
 		SettingPaymentVisibleMethodWxpaySource:                       "",
+		SettingPaymentBalanceDisplayCurrency:                         DefaultPaymentBalanceDisplayCurrency,
 		SettingPaymentVisibleMethodAlipayEnabled:                     "false",
 		SettingPaymentVisibleMethodWxpayEnabled:                      "false",
 		openAIAdvancedSchedulerSettingKey:                            "false",

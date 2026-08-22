@@ -182,11 +182,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
 import Icon from '@/components/icons/Icon.vue'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import { formatBalanceAmount, normalizeBalanceDisplayCurrency } from '@/components/payment/currency'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -208,6 +210,10 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+const appStore = useAppStore()
+const balanceDisplayCurrency = computed(() => normalizeBalanceDisplayCurrency(
+  appStore.cachedPublicSettings?.payment_balance_display_currency,
+))
 
 function normalizeBindingStatus(binding: boolean | UserAuthBindingStatus | undefined): boolean | null {
   if (typeof binding === 'boolean') {
@@ -273,7 +279,7 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
 }))
 
 function formatCurrency(value: number): string {
-  return `$${value.toFixed(2)}`
+  return formatBalanceAmount(value, balanceDisplayCurrency.value)
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {
