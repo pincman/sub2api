@@ -40,6 +40,20 @@ func TestShouldUseAlipayMobilePrecreate(t *testing.T) {
 	}
 }
 
+func TestValidateOrderInputRejectsSubscriptionWhenDisabled(t *testing.T) {
+	svc := &PaymentService{}
+	_, err := svc.validateOrderInput(context.Background(), CreateOrderRequest{
+		OrderType: payment.OrderTypeSubscription,
+		PlanID:    42,
+	}, &PaymentConfig{SubscriptionDisabled: true})
+	if err == nil {
+		t.Fatal("expected subscription order to be rejected")
+	}
+	if got := infraerrors.Reason(err); got != "SUBSCRIPTION_PAYMENT_DISABLED" {
+		t.Fatalf("error reason = %q, want SUBSCRIPTION_PAYMENT_DISABLED", got)
+	}
+}
+
 func TestIsOfficialAlipayProviderInstance(t *testing.T) {
 	t.Parallel()
 

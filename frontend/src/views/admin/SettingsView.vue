@@ -7777,6 +7777,48 @@
                     data-testid="payment-balance-disabled-toggle"
                   />
                 </div>
+                <!-- Subscription purchase toggle -->
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">
+                      {{
+                        t("admin.settings.payment.subscriptionPaymentDisabled")
+                      }}
+                    </label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{
+                        t(
+                          "admin.settings.payment.subscriptionPaymentDisabledHint",
+                        )
+                      }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.payment_subscription_disabled"
+                    data-testid="payment-subscription-disabled-toggle"
+                  />
+                </div>
+                <div>
+                  <label
+                    for="payment-recharge-description"
+                    class="input-label"
+                  >
+                    {{ t("admin.settings.payment.rechargeDescription") }}
+                  </label>
+                  <textarea
+                    id="payment-recharge-description"
+                    v-model="form.payment_recharge_description"
+                    rows="4"
+                    class="input"
+                    data-testid="payment-recharge-description"
+                    :placeholder="
+                      t('admin.settings.payment.rechargeDescriptionPlaceholder')
+                    "
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.payment.rechargeDescriptionHint") }}
+                  </p>
+                </div>
                 <!-- Row 1: Product name -->
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
@@ -9595,6 +9637,8 @@ const form = reactive<SettingsForm>({
   payment_max_pending_orders: 3,
   payment_order_timeout_minutes: 30,
   payment_balance_disabled: false,
+  payment_subscription_disabled: false,
+  payment_recharge_description: "",
   payment_balance_recharge_multiplier: 1,
   // Balance amounts are always presented with the fixed ¥ symbol in the UI.
   payment_balance_display_currency: "CNY",
@@ -11404,6 +11448,8 @@ async function saveSettings() {
       payment_order_timeout_minutes:
         Number(form.payment_order_timeout_minutes) || 0,
       payment_balance_disabled: form.payment_balance_disabled,
+      payment_subscription_disabled: form.payment_subscription_disabled,
+      payment_recharge_description: form.payment_recharge_description,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
       payment_subscription_usd_to_cny_rate:

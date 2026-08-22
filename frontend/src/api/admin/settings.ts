@@ -659,6 +659,8 @@ export interface SystemSettings {
   payment_max_pending_orders: number;
   payment_enabled_types: string[];
   payment_balance_disabled: boolean;
+  payment_subscription_disabled: boolean;
+  payment_recharge_description: string;
   payment_balance_recharge_multiplier: number;
   /** Display-only currency used for balance amounts across the site. */
   payment_balance_display_currency: "USD" | "CNY" | string;
@@ -974,6 +976,8 @@ export interface UpdateSettingsRequest {
   payment_max_pending_orders?: number;
   payment_enabled_types?: string[];
   payment_balance_disabled?: boolean;
+  payment_subscription_disabled?: boolean;
+  payment_recharge_description?: string;
   payment_balance_recharge_multiplier?: number;
   payment_balance_display_currency?: "USD" | "CNY" | string;
   payment_subscription_usd_to_cny_rate?: number;

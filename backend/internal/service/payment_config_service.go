@@ -25,6 +25,12 @@ const (
 	SettingLoadBalanceStrategy = "LOAD_BALANCE_STRATEGY"
 	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
 	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
+	// SettingPaymentRechargeDescription stores the administrator-authored
+	// markdown shown below the current balance on the recharge page.
+	SettingPaymentRechargeDescription = "PAYMENT_RECHARGE_DESCRIPTION"
+	// SettingSubscriptionPaymentDisabled controls whether subscription sales
+	// are exposed and whether new subscription payment orders are accepted.
+	SettingSubscriptionPaymentDisabled = "SUBSCRIPTION_PAYMENT_DISABLED"
 	// SettingPaymentBalanceDisplayCurrency controls the symbol used for balance
 	// amounts in the UI. It is display-only and does not change provider charge
 	// currencies or billing arithmetic.
@@ -67,6 +73,8 @@ type PaymentConfig struct {
 	BalanceDisabled           bool     `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64  `json:"balance_recharge_multiplier"`
 	BalanceDisplayCurrency    string   `json:"balance_display_currency"`
+	RechargeDescription       string   `json:"recharge_description"`
+	SubscriptionDisabled      bool     `json:"subscription_disabled"`
 	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
 	SubscriptionUSDToCNYRate float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate          float64 `json:"recharge_fee_rate"`
@@ -102,6 +110,8 @@ type UpdatePaymentConfigRequest struct {
 	BalanceDisabled           *bool    `json:"balance_disabled"`
 	BalanceRechargeMultiplier *float64 `json:"balance_recharge_multiplier"`
 	BalanceDisplayCurrency    *string  `json:"balance_display_currency"`
+	RechargeDescription       *string  `json:"recharge_description"`
+	SubscriptionDisabled      *bool    `json:"subscription_disabled"`
 	SubscriptionUSDToCNYRate  *float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate           *float64 `json:"recharge_fee_rate"`
 	LoadBalanceStrategy       *string  `json:"load_balance_strategy"`
@@ -228,7 +238,7 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 	keys := []string{
 		SettingPaymentEnabled, SettingMinRechargeAmount, SettingMaxRechargeAmount,
 		SettingDailyRechargeLimit, SettingOrderTimeoutMinutes, SettingMaxPendingOrders,
-		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingPaymentBalanceDisplayCurrency, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
+		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingPaymentBalanceDisplayCurrency, SettingPaymentRechargeDescription, SettingSubscriptionPaymentDisabled, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
 		SettingProductNamePrefix, SettingProductNameSuffix,
 		SettingHelpImageURL, SettingHelpText,
 		SettingCancelRateLimitOn, SettingCancelRateLimitMax,
@@ -258,6 +268,8 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		BalanceDisabled:           vals[SettingBalancePayDisabled] == "true",
 		BalanceRechargeMultiplier: normalizeBalanceRechargeMultiplier(pcParseFloat(vals[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier)),
 		BalanceDisplayCurrency:    normalizeStoredPaymentBalanceDisplayCurrency(vals[SettingPaymentBalanceDisplayCurrency]),
+		RechargeDescription:       vals[SettingPaymentRechargeDescription],
+		SubscriptionDisabled:      vals[SettingSubscriptionPaymentDisabled] == "true",
 		SubscriptionUSDToCNYRate:  normalizeSubscriptionUSDToCNYRate(pcParseFloat(vals[SettingSubscriptionUSDToCNYRate], 0)),
 		RechargeFeeRate:           pcParseFloat(vals[SettingRechargeFeeRate], 0),
 		LoadBalanceStrategy:       vals[SettingLoadBalanceStrategy],
@@ -393,6 +405,12 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	}
 	if req.BalanceRechargeMultiplier != nil {
 		m[SettingBalanceRechargeMult] = formatPositiveFloat(req.BalanceRechargeMultiplier)
+	}
+	if req.RechargeDescription != nil {
+		m[SettingPaymentRechargeDescription] = derefStr(req.RechargeDescription)
+	}
+	if req.SubscriptionDisabled != nil {
+		m[SettingSubscriptionPaymentDisabled] = formatBoolOrEmpty(req.SubscriptionDisabled)
 	}
 	if req.SubscriptionUSDToCNYRate != nil {
 		m[SettingSubscriptionUSDToCNYRate] = formatPositiveFloatExact(req.SubscriptionUSDToCNYRate)

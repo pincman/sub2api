@@ -116,6 +116,12 @@ func TestParsePaymentConfig(t *testing.T) {
 		if cfg.BalanceDisplayCurrency != DefaultPaymentBalanceDisplayCurrency {
 			t.Fatalf("expected BalanceDisplayCurrency=%s, got %q", DefaultPaymentBalanceDisplayCurrency, cfg.BalanceDisplayCurrency)
 		}
+		if cfg.RechargeDescription != "" {
+			t.Fatalf("expected empty RechargeDescription by default, got %q", cfg.RechargeDescription)
+		}
+		if cfg.SubscriptionDisabled {
+			t.Fatal("expected SubscriptionDisabled=false by default")
+		}
 		if len(cfg.EnabledTypes) != 0 {
 			t.Fatalf("expected empty EnabledTypes, got %v", cfg.EnabledTypes)
 		}
@@ -145,6 +151,8 @@ func TestParsePaymentConfig(t *testing.T) {
 			SettingMaxPendingOrders:              "5",
 			SettingEnabledPaymentTypes:           "alipay,wxpay,stripe",
 			SettingBalancePayDisabled:            "true",
+			SettingPaymentRechargeDescription:    "- claude price: ¥1 = $1",
+			SettingSubscriptionPaymentDisabled:   "true",
 			SettingLoadBalanceStrategy:           "least_amount",
 			SettingProductNamePrefix:             "PRE",
 			SettingProductNameSuffix:             "SUF",
@@ -178,6 +186,12 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 		if !cfg.BalanceDisabled {
 			t.Fatal("expected BalanceDisabled=true")
+		}
+		if cfg.RechargeDescription != "- claude price: ¥1 = $1" {
+			t.Fatalf("RechargeDescription = %q, want markdown text", cfg.RechargeDescription)
+		}
+		if !cfg.SubscriptionDisabled {
+			t.Fatal("expected SubscriptionDisabled=true")
 		}
 		if cfg.LoadBalanceStrategy != "least_amount" {
 			t.Fatalf("LoadBalanceStrategy = %q, want %q", cfg.LoadBalanceStrategy, "least_amount")
@@ -597,27 +611,33 @@ func TestUpdatePaymentConfig_OmittedVisibleMethodRoutingIsPreserved(t *testing.T
 
 func TestUpdatePaymentConfig_PersistsExplicitEmptyAndFalseValues(t *testing.T) {
 	repo := &paymentConfigSettingRepoStub{values: map[string]string{
-		SettingEnabledPaymentTypes: "alipay,wxpay",
-		SettingBalancePayDisabled:  "true",
-		SettingProductNamePrefix:   "existing",
+		SettingEnabledPaymentTypes:         "alipay,wxpay",
+		SettingBalancePayDisabled:          "true",
+		SettingProductNamePrefix:           "existing",
+		SettingPaymentRechargeDescription:  "existing markdown",
+		SettingSubscriptionPaymentDisabled: "true",
 	}}
 	svc := &PaymentConfigService{settingRepo: repo}
 
 	falseValue := false
 	emptyString := ""
 	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{
-		EnabledTypes:      []string{},
-		BalanceDisabled:   &falseValue,
-		ProductNamePrefix: &emptyString,
+		EnabledTypes:         []string{},
+		BalanceDisabled:      &falseValue,
+		ProductNamePrefix:    &emptyString,
+		RechargeDescription:  &emptyString,
+		SubscriptionDisabled: &falseValue,
 	})
 	if err != nil {
 		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
 	}
 
 	want := map[string]string{
-		SettingEnabledPaymentTypes: "",
-		SettingBalancePayDisabled:  "false",
-		SettingProductNamePrefix:   "",
+		SettingEnabledPaymentTypes:         "",
+		SettingBalancePayDisabled:          "false",
+		SettingProductNamePrefix:           "",
+		SettingPaymentRechargeDescription:  "",
+		SettingSubscriptionPaymentDisabled: "false",
 	}
 	if len(repo.updates) != len(want) {
 		t.Fatalf("updates = %v, want exactly %v", repo.updates, want)

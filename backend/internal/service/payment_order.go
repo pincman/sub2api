@@ -36,7 +36,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
 	}
-	plan, upgradeQuote, err := s.validateOrderInput(ctx, req, cfg)
+	plan, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -58,10 +58,6 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if plan != nil {
 		orderAmount = plan.Price
 		limitAmount = plan.Price
-		if upgradeQuote != nil {
-			orderAmount = upgradeQuote.UpgradeAmount
-			limitAmount = upgradeQuote.UpgradeAmount
-		}
 	} else if req.OrderType == payment.OrderTypeBalance {
 		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
 	}
@@ -104,51 +100,38 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, upgradeQuote, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
 	if err != nil {
 		return nil, err
-	}
-	if upgradeQuote != nil && s.subscriptionSvc != nil {
-		if invalidateErr := s.subscriptionSvc.invalidateSubscriptionCaches(req.UserID, upgradeQuote.SourceGroupID); invalidateErr != nil {
-			slog.Warn("failed to invalidate source subscription after upgrade lock", "subscription_id", req.SourceSubscriptionID, "error", invalidateErr)
-		}
 	}
 	resp, err := s.invokeProvider(ctx, order, req, cfg, limitAmount, payAmountStr, payAmount, plan, sel)
 	if err != nil {
 		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
 			SetStatus(OrderStatusFailed).
 			Save(ctx)
-		if unlockErr := s.releaseUpgradeSource(ctx, order, "payment provider order creation failed"); unlockErr != nil {
-			slog.Error("failed to unlock subscription after payment provider error", "order_id", order.ID, "error", unlockErr)
-		}
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, *SubscriptionUpgradeQuote, error) {
+func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
-		return nil, nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
+		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
-		plan, err := s.validateSubOrder(ctx, req)
-		return plan, nil, err
-	}
-	if req.OrderType == payment.OrderTypeSubscriptionUpgrade {
-		if req.SourceSubscriptionID <= 0 || req.PlanID <= 0 {
-			return nil, nil, infraerrors.BadRequest("INVALID_UPGRADE", "subscription upgrade requires source_subscription_id and plan_id")
+		if cfg.SubscriptionDisabled {
+			return nil, infraerrors.Forbidden("SUBSCRIPTION_PAYMENT_DISABLED", "subscription payment has been disabled")
 		}
-		quote, plan, err := s.loadSubscriptionUpgradeQuote(ctx, s.entClient, req.UserID, req.SourceSubscriptionID, req.PlanID, false)
-		return plan, quote, err
+		return s.validateSubOrder(ctx, req)
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
-		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
+		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
 	}
 	if (cfg.MinAmount > 0 && req.Amount < cfg.MinAmount) || (cfg.MaxAmount > 0 && req.Amount > cfg.MaxAmount) {
-		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
+		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRequest) (*dbent.SubscriptionPlan, error) {
@@ -169,7 +152,7 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	return plan, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, upgradeQuote *SubscriptionUpgradeQuote, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -180,13 +163,6 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	}
 	if err := s.checkDailyLimit(ctx, tx, req.UserID, limitAmount, cfg.DailyLimit); err != nil {
 		return nil, err
-	}
-	if upgradeQuote != nil {
-		lockedQuote, err := s.lockUpgradeSourceInTx(ctx, tx, req, plan, upgradeQuote)
-		if err != nil {
-			return nil, err
-		}
-		upgradeQuote = lockedQuote
 	}
 	tm := cfg.OrderTimeoutMin
 	if tm <= 0 {
@@ -235,10 +211,6 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	}
 	if plan != nil {
 		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
-	}
-	if upgradeQuote != nil {
-		b.SetUpgradeSourceSubscriptionID(req.SourceSubscriptionID).
-			SetUpgradeSnapshot(upgradeSnapshotMap(upgradeQuote))
 	}
 	order, err := b.Save(ctx)
 	if err != nil {
@@ -800,9 +772,6 @@ func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (stri
 	}
 	if req.PlanID > 0 {
 		q.Set("plan_id", strconv.FormatInt(req.PlanID, 10))
-	}
-	if req.SourceSubscriptionID > 0 {
-		q.Set("source_subscription_id", strconv.FormatInt(req.SourceSubscriptionID, 10))
 	}
 	if scope = strings.TrimSpace(scope); scope != "" {
 		q.Set("scope", scope)

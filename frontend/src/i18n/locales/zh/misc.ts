@@ -458,6 +458,7 @@ export default {
       PAYMENT_DISABLED: '支付系统已关闭',
       USER_INACTIVE: '账号已被禁用',
       BALANCE_PAYMENT_DISABLED: '余额充值功能已关闭',
+      SUBSCRIPTION_PAYMENT_DISABLED: '订阅购买功能已关闭',
       INVALID_AMOUNT: '金额无效',
       INVALID_INPUT: '参数有误',
       PLAN_NOT_AVAILABLE: '套餐不存在或已下架',
