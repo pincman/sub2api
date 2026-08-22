@@ -719,6 +719,7 @@ export default {
         helpImageUrl: '帮助图片链接',
         manageProviders: '管理服务商',
         balancePaymentDisabled: '禁用余额充值',
+        balancePaymentDisabledHint: '关闭后前台隐藏“充值”页，但保留“订阅”页。',
         noLimit: '留空表示不限制',
         helpImage: '帮助图片',
         helpImagePlaceholder: '上传或输入图片链接',
