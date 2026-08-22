@@ -12,7 +12,7 @@
         ]"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
       >
-        <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
+        <span v-if="displayVersion" class="font-medium">v{{ displayVersion }}</span>
         <span
           v-else
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
@@ -631,8 +631,8 @@
     </template>
 
     <!-- Non-admin: Simple static version text -->
-    <span v-else-if="version" class="text-xs text-gray-500 dark:text-dark-400">
-      v{{ version }}
+    <span v-else-if="displayVersion" class="text-xs text-gray-500 dark:text-dark-400">
+      v{{ displayVersion }}
     </span>
   </div>
 </template>
@@ -649,7 +649,7 @@ import {
   type RollbackVersionInfo
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
-import { isUpdateCapableBuild } from '@/utils/version'
+import { formatDisplayVersion, isUpdateCapableBuild } from '@/utils/version'
 import Icon from '@/components/icons/Icon.vue'
 
 const OFFICIAL_GITHUB_REPO = 'Wei-Shaw/sub2api'
@@ -674,6 +674,9 @@ const dropdownRef = ref<HTMLElement | null>(null)
 // Use store's cached version state
 const loading = computed(() => appStore.versionLoading)
 const currentVersion = computed(() => appStore.currentVersion || props.version || '')
+// Keep the complete version in `currentVersion` for update checks and details;
+// only shorten the compact label shown beneath the sidebar logo.
+const displayVersion = computed(() => formatDisplayVersion(currentVersion.value))
 const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
