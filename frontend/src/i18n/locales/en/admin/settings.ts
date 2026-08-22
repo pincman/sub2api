@@ -539,6 +539,10 @@ export default {
         balanceRechargeMultiplier: 'Balance Recharge Multiplier',
         balanceRechargeMultiplierHint: 'How many USD balance the user receives for each 1 CNY paid',
         balanceRechargePreview: 'Preview: 1 CNY = {usd} USD',
+        balanceDisplayCurrency: 'Balance Display Currency',
+        balanceDisplayCurrencyHint: 'Only changes the currency symbol shown for balances. It does not convert balances or change payment and order currency.',
+        balanceDisplayCurrencyUsd: 'USD ($)',
+        balanceDisplayCurrencyCny: 'CNY (¥)',
         subscriptionUsdToCnyRate: 'Subscription USD to CNY Rate',
         subscriptionUsdToCnyRateHint:
           'CNY charged per 1 USD of plan price on CNY channels (e.g. 7.15). 0 or empty = disabled, plan price is charged as-is. When enabled, all plan prices must be set in USD',

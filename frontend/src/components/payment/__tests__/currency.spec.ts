@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { currencySymbol, formatPaymentAmount, planCurrencySymbol } from '../currency'
+import {
+  balanceDisplayCurrencySymbol,
+  currencySymbol,
+  formatBalanceAmount,
+  formatPaymentAmount,
+  normalizeBalanceDisplayCurrency,
+  planCurrencySymbol,
+} from '../currency'
 
 describe('formatPaymentAmount', () => {
   it('uses the currency default fraction digits', () => {
@@ -25,5 +32,21 @@ describe('planCurrencySymbol', () => {
     expect(planCurrencySymbol('nzd')).toBe('NZ$')
     expect(planCurrencySymbol('')).toBe('$')
     expect(planCurrencySymbol(undefined)).toBe('$')
+  })
+})
+
+describe('balance display currency', () => {
+  it('defaults to USD and maps configured ISO codes to symbols', () => {
+    expect(normalizeBalanceDisplayCurrency()).toBe('USD')
+    expect(normalizeBalanceDisplayCurrency('cny')).toBe('CNY')
+    expect(normalizeBalanceDisplayCurrency('EUR')).toBe('USD')
+    expect(balanceDisplayCurrencySymbol()).toBe('$')
+    expect(balanceDisplayCurrencySymbol('CNY')).toBe('¥')
+    expect(formatBalanceAmount(12.5, 'CNY')).toBe('¥12.50')
+  })
+
+  it('does not convert the stored balance value', () => {
+    expect(formatBalanceAmount(12.5, 'USD')).toBe('$12.50')
+    expect(formatBalanceAmount(12.5, 'CNY')).not.toBe('¥87.50')
   })
 })

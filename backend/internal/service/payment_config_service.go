@@ -24,6 +24,10 @@ const (
 	SettingLoadBalanceStrategy = "LOAD_BALANCE_STRATEGY"
 	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
 	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
+	// SettingPaymentBalanceDisplayCurrency controls the symbol used for balance
+	// amounts in the UI. It is display-only and does not change provider charge
+	// currencies or billing arithmetic.
+	SettingPaymentBalanceDisplayCurrency = "PAYMENT_BALANCE_DISPLAY_CURRENCY"
 	// SettingSubscriptionUSDToCNYRate 是订阅 CNY 换算汇率（1 USD = X CNY）。
 	// 0/未配置 = 关闭换算（订阅按 price 数值直付），显式配置后 CNY 通道订阅按 price × rate 收款。
 	SettingSubscriptionUSDToCNYRate = "SUBSCRIPTION_USD_TO_CNY_RATE"
@@ -44,6 +48,9 @@ const (
 const (
 	defaultOrderTimeoutMin  = 30
 	defaultMaxPendingOrders = 3
+	// DefaultPaymentBalanceDisplayCurrency preserves the historical dollar
+	// display while making the choice explicit and configurable.
+	DefaultPaymentBalanceDisplayCurrency = "USD"
 )
 
 // PaymentConfig holds the payment system configuration.
@@ -57,6 +64,7 @@ type PaymentConfig struct {
 	EnabledTypes              []string `json:"enabled_payment_types"`
 	BalanceDisabled           bool     `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64  `json:"balance_recharge_multiplier"`
+	BalanceDisplayCurrency    string   `json:"balance_display_currency"`
 	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
 	SubscriptionUSDToCNYRate float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate          float64 `json:"recharge_fee_rate"`
@@ -89,6 +97,7 @@ type UpdatePaymentConfigRequest struct {
 	EnabledTypes              []string `json:"enabled_payment_types"`
 	BalanceDisabled           *bool    `json:"balance_disabled"`
 	BalanceRechargeMultiplier *float64 `json:"balance_recharge_multiplier"`
+	BalanceDisplayCurrency    *string  `json:"balance_display_currency"`
 	SubscriptionUSDToCNYRate  *float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate           *float64 `json:"recharge_fee_rate"`
 	LoadBalanceStrategy       *string  `json:"load_balance_strategy"`
@@ -213,7 +222,7 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 	keys := []string{
 		SettingPaymentEnabled, SettingMinRechargeAmount, SettingMaxRechargeAmount,
 		SettingDailyRechargeLimit, SettingOrderTimeoutMinutes, SettingMaxPendingOrders,
-		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
+		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingPaymentBalanceDisplayCurrency, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
 		SettingProductNamePrefix, SettingProductNameSuffix,
 		SettingHelpImageURL, SettingHelpText,
 		SettingCancelRateLimitOn, SettingCancelRateLimitMax,
@@ -242,6 +251,7 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		MaxPendingOrders:          pcParseInt(vals[SettingMaxPendingOrders], defaultMaxPendingOrders),
 		BalanceDisabled:           vals[SettingBalancePayDisabled] == "true",
 		BalanceRechargeMultiplier: normalizeBalanceRechargeMultiplier(pcParseFloat(vals[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier)),
+		BalanceDisplayCurrency:    normalizeStoredPaymentBalanceDisplayCurrency(vals[SettingPaymentBalanceDisplayCurrency]),
 		SubscriptionUSDToCNYRate:  normalizeSubscriptionUSDToCNYRate(pcParseFloat(vals[SettingSubscriptionUSDToCNYRate], 0)),
 		RechargeFeeRate:           pcParseFloat(vals[SettingRechargeFeeRate], 0),
 		LoadBalanceStrategy:       vals[SettingLoadBalanceStrategy],
@@ -299,6 +309,13 @@ func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) stri
 // nil-check before serialisation — this is inherent to patch-style update patterns
 // and cannot be meaningfully decomposed without introducing unnecessary abstraction.
 func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req UpdatePaymentConfigRequest) error {
+	if req.BalanceDisplayCurrency != nil {
+		currency, err := NormalizePaymentBalanceDisplayCurrency(*req.BalanceDisplayCurrency)
+		if err != nil {
+			return err
+		}
+		*req.BalanceDisplayCurrency = currency
+	}
 	if req.BalanceRechargeMultiplier != nil {
 		if math.IsNaN(*req.BalanceRechargeMultiplier) || math.IsInf(*req.BalanceRechargeMultiplier, 0) || *req.BalanceRechargeMultiplier <= 0 {
 			return infraerrors.BadRequest("INVALID_BALANCE_RECHARGE_MULTIPLIER", "balance recharge multiplier must be greater than 0")
@@ -347,12 +364,52 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 		SettingPaymentVisibleMethodAlipayEnabled: formatBoolOrEmpty(req.VisibleMethodAlipayEnabled),
 		SettingPaymentVisibleMethodWxpayEnabled:  formatBoolOrEmpty(req.VisibleMethodWxpayEnabled),
 	}
+	// Keep the display preference untouched for legacy/partial clients that do
+	// not know about this newly added field. An omitted value is different from
+	// explicitly selecting the empty value (which normalizes to USD above).
+	if req.BalanceDisplayCurrency != nil {
+		m[SettingPaymentBalanceDisplayCurrency] = derefPaymentBalanceDisplayCurrency(req.BalanceDisplayCurrency)
+	}
 	if req.EnabledTypes != nil {
 		m[SettingEnabledPaymentTypes] = strings.Join(req.EnabledTypes, ",")
 	} else {
 		m[SettingEnabledPaymentTypes] = ""
 	}
 	return s.settingRepo.SetMultiple(ctx, m)
+}
+
+// NormalizePaymentBalanceDisplayCurrency accepts the two symbols supported by
+// the balance UI. Empty input intentionally resolves to USD so an omitted or
+// blank legacy setting remains backwards-compatible.
+func NormalizePaymentBalanceDisplayCurrency(raw string) (string, error) {
+	currency := strings.ToUpper(strings.TrimSpace(raw))
+	if currency == "" {
+		return DefaultPaymentBalanceDisplayCurrency, nil
+	}
+	switch currency {
+	case "USD", "CNY":
+		return currency, nil
+	default:
+		return "", infraerrors.BadRequest(
+			"INVALID_PAYMENT_BALANCE_DISPLAY_CURRENCY",
+			"payment balance display currency must be USD or CNY",
+		)
+	}
+}
+
+func normalizeStoredPaymentBalanceDisplayCurrency(raw string) string {
+	currency, err := NormalizePaymentBalanceDisplayCurrency(raw)
+	if err != nil {
+		return DefaultPaymentBalanceDisplayCurrency
+	}
+	return currency
+}
+
+func derefPaymentBalanceDisplayCurrency(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func formatBoolOrEmpty(v *bool) string {

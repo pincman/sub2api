@@ -105,6 +105,7 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     plans: [],
     balance_disabled: false,
     balance_recharge_multiplier: 1,
+    payment_balance_display_currency: 'USD',
     subscription_usd_to_cny_rate: 0,
     recharge_fee_rate: 0,
     help_text: '',
