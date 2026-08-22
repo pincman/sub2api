@@ -485,6 +485,7 @@ const baseSettingsResponse = {
   payment_enabled_types: [],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_balance_display_currency: "USD",
   payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
   payment_load_balance_strategy: "round-robin",
@@ -1073,6 +1074,57 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_source");
     expect(payload).not.toHaveProperty("payment_visible_method_alipay_enabled");
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
+  });
+
+  it("loads the configured balance display currency and submits the canonical value", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      payment_balance_display_currency: "CNY",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+
+    const currencySelect = wrapper.findAll("select").find((node) => {
+      const optionValues = node
+        .findAll("option")
+        .map((option) => option.attributes("value"));
+      return optionValues.includes("USD") && optionValues.includes("CNY");
+    });
+
+    expect(currencySelect).toBeDefined();
+    expect((currencySelect?.element as HTMLSelectElement).value).toBe("CNY");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_balance_display_currency: "CNY",
+      }),
+    );
+  });
+
+  it("falls back to USD when an unsupported balance display currency is submitted", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      payment_balance_display_currency: "EUR",
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_balance_display_currency: "USD",
+      }),
+    );
   });
 
   it("submits the admin recharge affiliate rebate setting", async () => {

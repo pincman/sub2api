@@ -11,7 +11,7 @@
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
-          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
+          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">{{ formatBalance(balance) }}</p>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
         </div>
       </div>
@@ -225,9 +225,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
 import Icon from '@/components/icons/Icon.vue'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
 import type { PlatformQuotaItem } from '@/types'
+import { balanceDisplayCurrencySymbol, normalizeBalanceDisplayCurrency } from '@/components/payment/currency'
 
 interface FusedPlatformCard {
   platform: string
@@ -246,6 +248,10 @@ const props = defineProps<{
   platformQuotas?: PlatformQuotaItem[] | null
 }>()
 const { t } = useI18n()
+const appStore = useAppStore()
+const balanceDisplayCurrency = computed(() => normalizeBalanceDisplayCurrency(
+  appStore.cachedPublicSettings?.payment_balance_display_currency,
+))
 
 const PLATFORM_LABELS: Record<string, string> = {
   anthropic: 'Claude',
@@ -350,8 +356,8 @@ function quotaBarClass(p: number): string {
   return 'bg-green-500'
 }
 
-// 与 formatBalance 一致使用 Intl.NumberFormat 做半偶舍入，避免 toFixed 在不同 JS 引擎
-// 下偶发截断而非四舍五入（与后端展示精度不一致）。
+// Use Intl.NumberFormat for usage/cost values so display rounding matches the
+// backend across JavaScript engines.
 const usdFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -374,11 +380,12 @@ function formatResetTime(iso: string | null | undefined): string {
   })
 }
 
-const formatBalance = (b: number) =>
-  new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(b)
+// Preserve the dashboard's existing grouped-number formatting while applying
+// the configured presentation symbol.
+const formatBalance = (value: number) => {
+  const safeValue = Number.isFinite(value) ? value : 0
+  return `${balanceDisplayCurrencySymbol(balanceDisplayCurrency.value)}${usdFormatter.format(safeValue)}`
+}
 
 const formatNumber = (n: number) => n.toLocaleString()
 const formatCost = (c: number) => c.toFixed(4)

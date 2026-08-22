@@ -30,7 +30,7 @@
       </label>
       <div class="relative">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
-          $
+          {{ displayCurrencySymbol }}
         </span>
         <input
           type="text"
@@ -48,16 +48,20 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { balanceDisplayCurrencySymbol } from './currency'
 
 const props = withDefaults(defineProps<{
   amounts?: number[]
   modelValue: number | null
   min?: number
   max?: number
+  /** Presentation-only currency used for the balance/recharge input. */
+  currency?: string | null
 }>(), {
   amounts: () => [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
   min: 0,
   max: 0,
+  currency: 'USD',
 })
 
 const emit = defineEmits<{
@@ -65,6 +69,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const displayCurrencySymbol = computed(() => balanceDisplayCurrencySymbol(props.currency))
 
 const customText = ref('')
 

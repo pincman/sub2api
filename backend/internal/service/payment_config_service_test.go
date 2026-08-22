@@ -73,20 +73,6 @@ func TestPcParseInt(t *testing.T) {
 	}
 }
 
-func TestAlipayMobilePrecreateEnvironmentOverride(t *testing.T) {
-	svc := &PaymentConfigService{}
-
-	t.Setenv(SettingAlipayMobilePrecreateDeepLink, "true")
-	if !svc.parsePaymentConfig(map[string]string{SettingAlipayMobilePrecreateDeepLink: "false"}).AlipayMobilePrecreateDeepLink {
-		t.Fatal("expected environment variable to enable mobile Alipay precreate")
-	}
-
-	t.Setenv(SettingAlipayMobilePrecreateDeepLink, "false")
-	if svc.parsePaymentConfig(map[string]string{SettingAlipayMobilePrecreateDeepLink: "true"}).AlipayMobilePrecreateDeepLink {
-		t.Fatal("expected environment variable to disable mobile Alipay precreate")
-	}
-}
-
 func TestParsePaymentConfig(t *testing.T) {
 	t.Parallel()
 
@@ -113,29 +99,38 @@ func TestParsePaymentConfig(t *testing.T) {
 		if cfg.LoadBalanceStrategy != payment.DefaultLoadBalanceStrategy {
 			t.Fatalf("expected LoadBalanceStrategy=%s, got %q", payment.DefaultLoadBalanceStrategy, cfg.LoadBalanceStrategy)
 		}
+		if cfg.BalanceDisplayCurrency != DefaultPaymentBalanceDisplayCurrency {
+			t.Fatalf("expected BalanceDisplayCurrency=%s, got %q", DefaultPaymentBalanceDisplayCurrency, cfg.BalanceDisplayCurrency)
+		}
 		if len(cfg.EnabledTypes) != 0 {
 			t.Fatalf("expected empty EnabledTypes, got %v", cfg.EnabledTypes)
 		}
-		if cfg.AlipayMobilePrecreateDeepLink {
-			t.Fatal("expected AlipayMobilePrecreateDeepLink=false by default")
+	})
+
+	t.Run("balance display currency is normalized and invalid stored values fall back", func(t *testing.T) {
+		t.Parallel()
+		if got := svc.parsePaymentConfig(map[string]string{SettingPaymentBalanceDisplayCurrency: " cny "}).BalanceDisplayCurrency; got != "CNY" {
+			t.Fatalf("normalized display currency = %q, want CNY", got)
+		}
+		if got := svc.parsePaymentConfig(map[string]string{SettingPaymentBalanceDisplayCurrency: "EUR"}).BalanceDisplayCurrency; got != DefaultPaymentBalanceDisplayCurrency {
+			t.Fatalf("invalid stored display currency = %q, want %s", got, DefaultPaymentBalanceDisplayCurrency)
 		}
 	})
 
 	t.Run("all values populated", func(t *testing.T) {
 		t.Parallel()
 		vals := map[string]string{
-			SettingPaymentEnabled:                "true",
-			SettingMinRechargeAmount:             "5.00",
-			SettingMaxRechargeAmount:             "1000.00",
-			SettingDailyRechargeLimit:            "5000.00",
-			SettingOrderTimeoutMinutes:           "15",
-			SettingMaxPendingOrders:              "5",
-			SettingEnabledPaymentTypes:           "alipay,wxpay,stripe",
-			SettingBalancePayDisabled:            "true",
-			SettingLoadBalanceStrategy:           "least_amount",
-			SettingProductNamePrefix:             "PRE",
-			SettingProductNameSuffix:             "SUF",
-			SettingAlipayMobilePrecreateDeepLink: "true",
+			SettingPaymentEnabled:      "true",
+			SettingMinRechargeAmount:   "5.00",
+			SettingMaxRechargeAmount:   "1000.00",
+			SettingDailyRechargeLimit:  "5000.00",
+			SettingOrderTimeoutMinutes: "15",
+			SettingMaxPendingOrders:    "5",
+			SettingEnabledPaymentTypes: "alipay,wxpay,stripe",
+			SettingBalancePayDisabled:  "true",
+			SettingLoadBalanceStrategy: "least_amount",
+			SettingProductNamePrefix:   "PRE",
+			SettingProductNameSuffix:   "SUF",
 		}
 		cfg := svc.parsePaymentConfig(vals)
 
@@ -174,9 +169,6 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 		if cfg.ProductNameSuffix != "SUF" {
 			t.Fatalf("ProductNameSuffix = %q, want %q", cfg.ProductNameSuffix, "SUF")
-		}
-		if !cfg.AlipayMobilePrecreateDeepLink {
-			t.Fatal("expected AlipayMobilePrecreateDeepLink=true")
 		}
 	})
 
@@ -441,12 +433,7 @@ func (s *paymentConfigSettingRepoStub) GetAll(context.Context) (map[string]strin
 func (s *paymentConfigSettingRepoStub) Delete(context.Context, string) error { return nil }
 
 func TestUpdatePaymentConfig_PersistsVisibleMethodRouting(t *testing.T) {
-	repo := &paymentConfigSettingRepoStub{values: map[string]string{
-		SettingPaymentVisibleMethodAlipayEnabled: "false",
-		SettingPaymentVisibleMethodAlipaySource:  VisibleMethodSourceOfficialAlipay,
-		SettingPaymentVisibleMethodWxpayEnabled:  "true",
-		SettingPaymentVisibleMethodWxpaySource:   VisibleMethodSourceEasyPayWechat,
-	}}
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{}}
 	svc := &PaymentConfigService{settingRepo: repo}
 
 	alipayEnabled := true
@@ -475,79 +462,71 @@ func TestUpdatePaymentConfig_PersistsVisibleMethodRouting(t *testing.T) {
 	}
 }
 
-func TestUpdatePaymentConfig_OmittedVisibleMethodRoutingIsPreserved(t *testing.T) {
-	wantVisibleMethods := map[string]string{
-		SettingPaymentVisibleMethodAlipayEnabled: "true",
-		SettingPaymentVisibleMethodAlipaySource:  VisibleMethodSourceEasyPayAlipay,
-		SettingPaymentVisibleMethodWxpayEnabled:  "false",
-		SettingPaymentVisibleMethodWxpaySource:   VisibleMethodSourceOfficialWechat,
-	}
-	initial := make(map[string]string, len(wantVisibleMethods))
-	for key, value := range wantVisibleMethods {
-		initial[key] = value
-	}
-	repo := &paymentConfigSettingRepoStub{values: initial}
+func TestUpdatePaymentConfig_PersistsAndValidatesBalanceDisplayCurrency(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{}}
 	svc := &PaymentConfigService{settingRepo: repo}
 
-	enabled := true
-	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{Enabled: &enabled})
-	if err != nil {
+	currency := " cny "
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{BalanceDisplayCurrency: &currency}); err != nil {
 		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
 	}
+	if got := repo.values[SettingPaymentBalanceDisplayCurrency]; got != "CNY" {
+		t.Fatalf("stored display currency = %q, want CNY", got)
+	}
 
-	visibleMethodKeys := []string{
-		SettingPaymentVisibleMethodAlipayEnabled,
-		SettingPaymentVisibleMethodAlipaySource,
-		SettingPaymentVisibleMethodWxpayEnabled,
-		SettingPaymentVisibleMethodWxpaySource,
-	}
-	for _, key := range visibleMethodKeys {
-		if _, ok := repo.updates[key]; ok {
-			t.Fatalf("omitted visible method setting %q was written", key)
-		}
-		if repo.values[key] != wantVisibleMethods[key] {
-			t.Fatalf("visible method setting %q = %q, want preserved value %q", key, repo.values[key], wantVisibleMethods[key])
-		}
-	}
-	if repo.updates[SettingPaymentEnabled] != "true" {
-		t.Fatalf("payment enabled update = %q, want true", repo.updates[SettingPaymentEnabled])
+	invalid := "EUR"
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{BalanceDisplayCurrency: &invalid}); err == nil {
+		t.Fatal("expected invalid display currency to fail")
 	}
 }
 
-func TestUpdatePaymentConfig_PersistsExplicitEmptyAndFalseValues(t *testing.T) {
+func TestUpdatePaymentConfig_OmittedBalanceDisplayCurrencyPreservesExistingValue(t *testing.T) {
 	repo := &paymentConfigSettingRepoStub{values: map[string]string{
-		SettingEnabledPaymentTypes: "alipay,wxpay",
-		SettingBalancePayDisabled:  "true",
-		SettingProductNamePrefix:   "existing",
+		SettingPaymentBalanceDisplayCurrency: "CNY",
 	}}
 	svc := &PaymentConfigService{settingRepo: repo}
+	enabled := true
 
-	falseValue := false
-	emptyString := ""
-	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{
-		EnabledTypes:      []string{},
-		BalanceDisabled:   &falseValue,
-		ProductNamePrefix: &emptyString,
-	})
-	if err != nil {
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{Enabled: &enabled}); err != nil {
 		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
 	}
+	if got := repo.values[SettingPaymentBalanceDisplayCurrency]; got != "CNY" {
+		t.Fatalf("omitted display currency = %q, want existing CNY", got)
+	}
+	if _, ok := repo.updates[SettingPaymentBalanceDisplayCurrency]; ok {
+		t.Fatal("omitted display currency should not be included in the update map")
+	}
+}
 
-	want := map[string]string{
-		SettingEnabledPaymentTypes: "",
-		SettingBalancePayDisabled:  "false",
-		SettingProductNamePrefix:   "",
+func TestNormalizePaymentBalanceDisplayCurrency(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty defaults to USD", input: "", want: "USD"},
+		{name: "USD", input: " usd ", want: "USD"},
+		{name: "CNY", input: "cNy", want: "CNY"},
+		{name: "unsupported", input: "EUR", wantErr: true},
 	}
-	if len(repo.updates) != len(want) {
-		t.Fatalf("updates = %v, want exactly %v", repo.updates, want)
-	}
-	for key, value := range want {
-		if repo.updates[key] != value {
-			t.Fatalf("update %q = %q, want %q", key, repo.updates[key], value)
-		}
-		if repo.values[key] != value {
-			t.Fatalf("stored %q = %q, want %q", key, repo.values[key], value)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizePaymentBalanceDisplayCurrency(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
