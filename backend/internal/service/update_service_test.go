@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,13 +32,17 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
+	latestRepo     string
+	recentRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.latestRepo = repo
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.recentRepo = repo
 	return s.recentReleases, s.recentErr
 }
 
@@ -184,4 +189,121 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 	require.Contains(t, err.Error(), "no compatible release found")
+}
+
+func TestUpdateServiceCustomBuildUsesCustomReleaseRepository(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.180-custom.next"},
+	}
+	svc := NewUpdateService(
+		&updateServiceCacheStub{},
+		client,
+		"0.1.179-custom.a800c61a94a5",
+		"custom",
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.True(t, info.HasUpdate)
+	require.Equal(t, "pincman/sub2api", client.latestRepo)
+}
+
+func TestUpdateServiceReleaseBuildUsesOfficialRepository(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.179"},
+	}
+	svc := NewUpdateService(
+		&updateServiceCacheStub{},
+		client,
+		"0.1.179",
+		"release",
+	)
+
+	_, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.Equal(t, "Wei-Shaw/sub2api", client.latestRepo)
+}
+
+func TestCompareVersionsIgnoresBuildMetadata(t *testing.T) {
+	require.Equal(t, [3]int{0, 1, 179}, parseVersion("0.1.179-custom.a800c61a94a5"))
+	require.Equal(t, 0, compareVersions("0.1.179-custom.a800c61a94a5", "0.1.179"))
+	require.Equal(t, -1, compareVersions("0.1.179-custom.a800c61a94a5", "0.1.180"))
+}
+
+func TestHasNewerReleaseCustomBuildComparesSameBaseTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		current string
+		latest  string
+		want    bool
+	}{
+		{
+			name:    "different custom tag is newer",
+			current: "0.1.179-custom.a800c61a94a5",
+			latest:  "v0.1.179-custom.next123456789",
+			want:    true,
+		},
+		{
+			name:    "same custom tag is current",
+			current: "0.1.179-custom.a800c61a94a5",
+			latest:  "v0.1.179-custom.a800c61a94a5",
+			want:    false,
+		},
+		{
+			name:    "official tag cannot replace custom build",
+			current: "0.1.179-custom.a800c61a94a5",
+			latest:  "v0.1.179",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, hasNewerRelease(tt.current, tt.latest, "custom"))
+		})
+	}
+}
+
+func TestUpdateServiceCustomBuildUsesCustomTagFromCache(t *testing.T) {
+	cache := &updateServiceCacheStub{
+		data: fmt.Sprintf(
+			`{"latest":"0.1.179-custom.next123456789","repository":"pincman/sub2api","timestamp":%d}`,
+			time.Now().Unix(),
+		),
+	}
+	svc := NewUpdateService(
+		cache,
+		&updateServiceGitHubClientStub{},
+		"0.1.179-custom.a800c61a94a5",
+		"custom",
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), false)
+	require.NoError(t, err)
+	require.True(t, info.Cached)
+	require.True(t, info.HasUpdate)
+}
+
+func TestUpdateServiceIgnoresCacheFromAnotherReleaseRepository(t *testing.T) {
+	cache := &updateServiceCacheStub{
+		data: fmt.Sprintf(
+			`{"latest":"0.1.180","repository":"Wei-Shaw/sub2api","timestamp":%d}`,
+			time.Now().Unix(),
+		),
+	}
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.179-custom.next123456789"},
+	}
+	svc := NewUpdateService(
+		cache,
+		client,
+		"0.1.179-custom.a800c61a94a5",
+		"custom",
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), false)
+	require.NoError(t, err)
+	require.False(t, info.Cached)
+	require.Equal(t, "pincman/sub2api", client.latestRepo)
+	require.True(t, info.HasUpdate)
 }

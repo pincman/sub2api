@@ -649,9 +649,11 @@ import {
   type RollbackVersionInfo
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
+import { isUpdateCapableBuild } from '@/utils/version'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
+const OFFICIAL_GITHUB_REPO = 'Wei-Shaw/sub2api'
+const CUSTOM_GITHUB_REPO = 'pincman/sub2api'
 // Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
 const DOCKER_IMAGE = 'weishaw/sub2api'
 
@@ -707,10 +709,14 @@ const manualTabs = computed(() => [
   { key: 'docker' as const, label: t('version.deployDocker') }
 ])
 
+const updateRepository = computed(() =>
+  buildType.value === 'custom' ? CUSTOM_GITHUB_REPO : OFFICIAL_GITHUB_REPO,
+)
+
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
   const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
+  return `curl -sSL https://raw.githubusercontent.com/${updateRepository.value}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
 })
 
 const dockerRollbackCommand = computed(() => {
@@ -728,8 +734,9 @@ const activeManualCommand = computed(() =>
   manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
 )
 
-// Only show update check for release builds (binary/docker deployment)
-const isReleaseBuild = computed(() => buildType.value === 'release')
+// Release and custom CI builds can be updated in place. Source builds still
+// require a manual git/deploy workflow.
+const isReleaseBuild = computed(() => isUpdateCapableBuild(buildType.value))
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value

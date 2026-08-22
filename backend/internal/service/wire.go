@@ -29,7 +29,7 @@ func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthCli
 // BuildInfo contains build information
 type BuildInfo struct {
 	Version   string
-	BuildType string
+	BuildType string // "source", "release", or "custom"
 }
 
 // ProvidePricingService creates and initializes PricingService
