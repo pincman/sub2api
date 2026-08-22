@@ -3,7 +3,7 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium text-gray-900">{{ user.email }}</p><p class="text-sm text-gray-500">{{ t('admin.users.currentBalance') }}: {{ displayCurrencySymbol }}{{ formatBalance(user.balance) }}</p></div>
+        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentBalance') }}: {{ displayCurrencySymbol }}{{ formatBalance(user.balance) }}</p></div>
       </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
@@ -44,13 +44,15 @@ const balanceDisplayCurrency = computed(() => normalizeBalanceDisplayCurrency(
 ))
 const displayCurrencySymbol = computed(() => balanceDisplayCurrencySymbol(balanceDisplayCurrency.value))
 
-// Preserve the modal's existing precision while applying the configured symbol.
+// 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {
   if (value === 0) return '0.00'
+  // 最多保留8位小数，去除尾部的0
   const formatted = value.toFixed(8).replace(/\.?0+$/, '')
+  // 确保至少有2位小数
   const parts = formatted.split('.')
-  if (parts.length === 1) return `${formatted}.00`
-  if (parts[1].length === 1) return `${formatted}0`
+  if (parts.length === 1) return formatted + '.00'
+  if (parts[1].length === 1) return formatted + '0'
   return formatted
 }
 
