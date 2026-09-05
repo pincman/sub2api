@@ -623,6 +623,7 @@ type PublicSettingsInjectionPayload struct {
 	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
 	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
 	AffiliateEnabled           bool `json:"affiliate_enabled"`
 	RiskControlEnabled         bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
@@ -704,6 +705,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,

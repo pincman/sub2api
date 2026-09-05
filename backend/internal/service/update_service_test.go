@@ -77,8 +77,9 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 func TestParseVersionHandlesCustomReleaseSuffix(t *testing.T) {
 	require.Equal(t, [3]int{0, 1, 160}, parseVersion("v0.1.160-custom.abc123"))
 	require.Equal(t, [3]int{0, 1, 160}, parseVersion("custom-v0.1.160.abc123"))
-	require.Equal(t, -1, compareVersions("0.1.160", "v0.1.160-custom.abc123"))
-	require.Equal(t, -1, compareVersions("0.1.160-custom.old", "v0.1.160-custom.new"))
+	// Custom build metadata does not change the stable semantic version.
+	require.Equal(t, 0, compareVersions("0.1.160", "v0.1.160-custom.abc123"))
+	require.Equal(t, 0, compareVersions("0.1.160-custom.old", "v0.1.160-custom.new"))
 	require.Equal(t, 0, compareVersions("0.1.160-custom.abc123", "v0.1.160-custom.abc123"))
 }
 

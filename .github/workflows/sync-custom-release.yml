@@ -31,6 +31,8 @@ jobs:
       - name: Fetch and merge the latest stable upstream release
         id: upstream
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
           git config user.name 'sub2api custom release bot'
@@ -44,28 +46,39 @@ jobs:
           echo "upstream_tag=$upstream_tag" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
 
-          if git merge-base --is-ancestor "$upstream_tag" HEAD; then
-            echo 'Upstream stable release is already included in the custom branch.'
-          else
+          if ! git merge-base --is-ancestor "$upstream_tag" HEAD; then
             git merge --no-ff "$upstream_tag" -m "chore: merge upstream $upstream_tag into custom build"
-            git push origin HEAD:custom/subscription-upgrade
           fi
 
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "short_commit=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          commit="$(git rev-parse HEAD)"
+          short_commit="$(git rev-parse --short=12 HEAD)"
+          release_tag="v${upstream_version}-custom.${short_commit}"
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            changed=false
+            echo "Release $release_tag already exists; nothing to publish."
+          else
+            changed=true
+            echo "Release $release_tag is missing; tests and packaging are required."
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "short_commit=$short_commit" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm and Node.js
+        if: steps.upstream.outputs.changed == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - uses: actions/setup-node@v6
+        if: steps.upstream.outputs.changed == 'true'
         with:
           node-version: '20'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Test and build frontend
+        if: steps.upstream.outputs.changed == 'true'
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
@@ -75,6 +88,7 @@ jobs:
           pnpm build
 
       - name: Set up Go
+        if: steps.upstream.outputs.changed == 'true'
         uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -82,10 +96,12 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Test backend
+        if: steps.upstream.outputs.changed == 'true'
         working-directory: backend
         run: go test ./...
 
       - name: Build verified custom Linux release
+        if: steps.upstream.outputs.changed == 'true'
         id: package
         shell: bash
         run: |
@@ -109,7 +125,12 @@ jobs:
           echo "tag=v${custom_version}" >> "$GITHUB_OUTPUT"
           echo "archive=release-dist/$archive" >> "$GITHUB_OUTPUT"
 
+      - name: Push verified custom branch
+        if: steps.upstream.outputs.changed == 'true'
+        run: git push origin HEAD:custom/subscription-upgrade
+
       - name: Create immutable fork release
+        if: steps.upstream.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.package.outputs.tag }}
