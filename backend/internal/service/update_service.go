@@ -731,6 +731,8 @@ func isCustomReleaseTag(version string) bool {
 
 func parseVersion(v string) [3]int {
 	v = normalizeVersionTag(v)
+	// Accept the legacy custom-vX.Y.Z form emitted by early custom builds.
+	v = strings.TrimPrefix(strings.ToLower(v), "custom-v")
 	// Custom releases append build metadata (for example
 	// 0.1.179-custom.a800c61a94a5). Compare the stable semantic version only;
 	// otherwise strconv.Atoi would reject the patch component and treat it as
