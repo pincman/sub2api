@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-custom-release
+  group: sync-custom-release-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
