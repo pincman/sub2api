@@ -10,6 +10,8 @@ APP_DIR="/opt/sub2api"
 CURRENT_BINARY="$APP_DIR/sub2api"
 BACKUP_BINARY="$APP_DIR/sub2api.pre-custom-$(date -u +%Y%m%dT%H%M%SZ)"
 MIGRATION_FILE="182_subscription_upgrades.sql"
+PANEL_ROOT="/opt/1panel"
+PG_APP_DIR="$PANEL_ROOT/apps/postgresql/postgresql"
 SWITCHED="false"
 
 rollback() {
@@ -53,12 +55,20 @@ done
 [[ "$healthy" == "true" ]]
 systemctl is-active --quiet sub2api.service
 
-docker exec 1Panel-postgresql-edxZ psql -U gpt -d gpt -At \
+set -a
+# shellcheck disable=SC1090
+. "$PG_APP_DIR/.env"
+set +a
+PG_CONTAINER="$CONTAINER_NAME"
+PG_USER="$PANEL_DB_ROOT_USER"
+PG_PASSWORD="$PANEL_DB_ROOT_PASSWORD"
+
+docker exec -e "PGPASSWORD=$PG_PASSWORD" "$PG_CONTAINER" psql -U "$PG_USER" -d ai -At \
   -c "SELECT filename FROM schema_migrations WHERE filename = '$MIGRATION_FILE'" | grep -qx "$MIGRATION_FILE"
-docker exec 1Panel-postgresql-edxZ psql -U gpt -d gpt -At -F '|' \
+docker exec -e "PGPASSWORD=$PG_PASSWORD" "$PG_CONTAINER" psql -U "$PG_USER" -d ai -At -F '|' \
   -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'payment_orders' AND column_name IN ('upgrade_source_subscription_id', 'upgrade_snapshot') ORDER BY column_name" \
   | grep -qx 'upgrade_snapshot|jsonb'
-docker exec 1Panel-postgresql-edxZ psql -U gpt -d gpt -At -F '|' \
+docker exec -e "PGPASSWORD=$PG_PASSWORD" "$PG_CONTAINER" psql -U "$PG_USER" -d ai -At -F '|' \
   -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'payment_orders' AND column_name IN ('upgrade_source_subscription_id', 'upgrade_snapshot') ORDER BY column_name" \
   | grep -qx 'upgrade_source_subscription_id|bigint'
 
