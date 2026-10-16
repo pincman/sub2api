@@ -36,6 +36,16 @@ func isGrokContentPolicyRejection(statusCode int, responseBody []byte) bool {
 	return grokContentPolicyMessage(string(responseBody))
 }
 
+// A bare 403 is not evidence that the entire account is unusable. Only
+// explicit account suspension or entitlement failures justify a cooldown.
+func isGrokAccountAccessRejection(responseBody []byte) bool {
+	if grokAccountAccessMessage(string(responseBody)) {
+		return true
+	}
+	var payload any
+	return json.Unmarshal(responseBody, &payload) == nil && grokStructuredAccountAccessMarker(payload)
+}
+
 func grokStructuredAccountAccessMarker(value any) bool {
 	switch node := value.(type) {
 	case map[string]any:
@@ -270,7 +280,7 @@ func grokStructuredErrorMessageCandidates(body []byte) []string {
 
 // applyGrokForbiddenPolicy applies an administrator's existing temporary
 // unschedulable rules to a non-content 403. It reports true only when a rule
-// matched; unmatched responses retain the legacy entitlement cooldown.
+// matched; unmatched responses need explicit account-access evidence to cool.
 func (s *OpenAIGatewayService) applyGrokForbiddenPolicy(ctx context.Context, account *Account, responseBody []byte) bool {
 	if account == nil || !account.IsTempUnschedulableEnabled() {
 		return false

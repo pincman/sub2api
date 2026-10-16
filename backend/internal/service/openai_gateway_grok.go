@@ -2070,7 +2070,9 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 			s.rateLimitGrok(ctx, account, grokSpendingLimitResetAt(account, time.Now()))
 			return
 		}
-		s.tempUnscheduleGrok(ctx, account, 30*time.Minute, "grok access or entitlement denied")
+		if isGrokAccountAccessRejection(responseBody) {
+			s.tempUnscheduleGrok(ctx, account, 30*time.Minute, "grok access or entitlement denied")
+		}
 	case http.StatusTooManyRequests:
 		// updateGrokUsageSnapshot installs rate-limit state for non-pool accounts.
 		// Free-usage 429 was already cooled above via body classification.

@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -427,6 +428,68 @@ func TestHandleGrokAccountUpstreamError403UsesConfiguredRule(t *testing.T) {
 	require.Less(t, repo.lastTempUnschedUntil, before.Add(8*time.Minute))
 }
 
+func TestHandleGrokAccountUpstreamErrorGeneric403UsesConfiguredRule(t *testing.T) {
+	repo := &grokQuotaAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{
+		ID: 4719, Platform: PlatformGrok, Type: AccountTypeOAuth,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusForbidden),
+					"keywords":         []any{"request forbidden"},
+					"duration_minutes": float64(7),
+				},
+			},
+		},
+	}
+	before := time.Now()
+
+	svc.handleGrokAccountUpstreamError(
+		context.Background(), account, http.StatusForbidden, nil,
+		[]byte(`{"error":{"message":"Request forbidden"}}`),
+	)
+
+	require.Equal(t, 1, repo.tempUnschedCalls)
+	require.Equal(t, "grok configured forbidden rule", repo.lastTempUnschedReason)
+	require.WithinDuration(t, before.Add(7*time.Minute), repo.lastTempUnschedUntil, time.Second)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestHandleGrokAccountUpstreamErrorGeneric403ConfiguredUnmatchedDoesNotPause(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("rules enabled=%t", enabled), func(t *testing.T) {
+			repo := &grokQuotaAccountRepo{}
+			svc := &OpenAIGatewayService{accountRepo: repo}
+			account := &Account{
+				ID: 4720, Platform: PlatformGrok, Type: AccountTypeOAuth,
+				Status: StatusActive, Schedulable: true,
+				Credentials: map[string]any{
+					"temp_unschedulable_enabled": enabled,
+					"temp_unschedulable_rules": []any{
+						map[string]any{
+							"error_code":       float64(http.StatusForbidden),
+							"keywords":         []any{"different failure"},
+							"duration_minutes": float64(7),
+						},
+					},
+				},
+			}
+
+			svc.handleGrokAccountUpstreamError(
+				context.Background(), account, http.StatusForbidden, nil,
+				[]byte(`{"error":{"message":"Forbidden"}}`),
+			)
+
+			require.Zero(t, repo.tempUnschedCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			require.True(t, account.IsSchedulable())
+		})
+	}
+}
+
 func TestHandleGrokAccountUpstreamError403ConfiguredUnmatchedKeepsDefaultCooldown(t *testing.T) {
 	repo := &grokQuotaAccountRepo{}
 	svc := &OpenAIGatewayService{accountRepo: repo}
@@ -454,4 +517,59 @@ func TestHandleGrokAccountUpstreamError403ConfiguredUnmatchedKeepsDefaultCooldow
 	require.Equal(t, 1, repo.tempUnschedCalls)
 	require.Equal(t, "grok access or entitlement denied", repo.lastTempUnschedReason)
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestHandleGrokAccountUpstreamErrorExplicitAccountAccess403KeepsCooldown(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"code":"account_suspended","message":"Access denied"}}`,
+		`{"response":{"error":{"code":"subscription_required"}}}`,
+		`{"error":{"code":"account_disabled"}}`,
+		`{"error":{"message":"Your account has been suspended"}}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			repo := &grokQuotaAccountRepo{}
+			svc := &OpenAIGatewayService{accountRepo: repo}
+			account := &Account{ID: 4724, Platform: PlatformGrok, Type: AccountTypeOAuth}
+			before := time.Now()
+
+			svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusForbidden, nil, []byte(body))
+
+			require.Equal(t, 1, repo.tempUnschedCalls)
+			require.Equal(t, "grok access or entitlement denied", repo.lastTempUnschedReason)
+			require.WithinDuration(t, before.Add(30*time.Minute), repo.lastTempUnschedUntil, time.Second)
+			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.rateLimitedCalls)
+		})
+	}
+}
+
+func TestObserveGrokTestResponseGeneric403DoesNotPauseAccount(t *testing.T) {
+	for _, body := range []string{
+		"Forbidden",
+		`{"error":{"message":"Forbidden"}}`,
+		`{"code":"permission-denied","error":"Request forbidden"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			repo := &grokQuotaAccountRepo{}
+			svc := &AccountTestService{accountRepo: repo}
+			account := &Account{
+				ID: 4725, Platform: PlatformGrok, Type: AccountTypeOAuth,
+				Status: StatusActive, Schedulable: true,
+			}
+			resp := &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}
+
+			svc.observeGrokTestResponse(context.Background(), account, resp)
+
+			require.Zero(t, repo.tempUnschedCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.True(t, account.IsSchedulable())
+			preservedBody, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, body, string(preservedBody))
+		})
+	}
 }

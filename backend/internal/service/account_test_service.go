@@ -1220,7 +1220,9 @@ func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, accoun
 	case http.StatusPaymentRequired:
 		cooldown, reason = 30*time.Minute, "grok payment required"
 	case http.StatusForbidden:
-		cooldown, reason = 30*time.Minute, "grok entitlement or subscription tier denied"
+		if isGrokAccountAccessRejection(responseBody) {
+			cooldown, reason = 30*time.Minute, "grok entitlement or subscription tier denied"
+		}
 	default:
 		if resp.StatusCode >= 500 {
 			cooldown, reason = 2*time.Minute, "grok upstream temporary error"

@@ -3044,13 +3044,6 @@ func TestHandleGrokAccountUpstreamErrorTempUnschedulesNonRateLimitStates(t *test
 			wantMaxCooldown: 10*time.Minute + time.Second,
 		},
 		{
-			name:            "forbidden entitlement",
-			status:          http.StatusForbidden,
-			wantReason:      "grok access or entitlement denied",
-			wantMinCooldown: 30*time.Minute - time.Second,
-			wantMaxCooldown: 30*time.Minute + time.Second,
-		},
-		{
 			name:            "payment required",
 			status:          http.StatusPaymentRequired,
 			wantReason:      "grok payment required",
@@ -3086,6 +3079,89 @@ func TestHandleGrokAccountUpstreamErrorTempUnschedulesNonRateLimitStates(t *test
 	}
 }
 
+func TestHandleGrokAccountUpstreamErrorGeneric403DoesNotPauseAccount(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    []byte
+		headers http.Header
+	}{
+		{name: "no body"},
+		{name: "plain text", body: []byte("Forbidden")},
+		{name: "JSON message", body: []byte(`{"error":{"message":"Forbidden"}}`)},
+		{name: "generic permission denied", body: []byte(`{"code":"permission-denied","error":"Request forbidden"}`)},
+		{name: "generic gateway reason", body: []byte(`{"error":{"message":"grok access or entitlement denied"}}`)},
+		{name: "HTML response", body: []byte("<html><body>403 Forbidden</body></html>")},
+		{
+			name: "quota remaining",
+			body: []byte(`{"error":{"message":"xAI upstream returned status 403"}}`),
+			headers: http.Header{
+				"X-Ratelimit-Limit-Requests":     []string{"100"},
+				"X-Ratelimit-Remaining-Requests": []string{"75"},
+			},
+		},
+	}
+
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeAPIKey} {
+		for _, tt := range tests {
+			t.Run(accountType+"/"+tt.name, func(t *testing.T) {
+				repo := &grokQuotaAccountRepo{}
+				svc := &OpenAIGatewayService{accountRepo: repo}
+				account := &Account{
+					ID: 615, Platform: PlatformGrok, Type: accountType,
+					Status: StatusActive, Schedulable: true,
+				}
+
+				for attempt := 0; attempt < 3; attempt++ {
+					svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusForbidden, tt.headers, tt.body)
+				}
+
+				require.Zero(t, repo.tempUnschedCalls, "a request-scoped 403 must not quarantine the entire account")
+				require.Zero(t, repo.rateLimitedCalls)
+				require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+				require.Zero(t, svc.openaiAccountRuntimeBlockSequence.Load())
+				require.Nil(t, account.TempUnschedulableUntil)
+				require.Empty(t, account.TempUnschedulableReason)
+				require.True(t, account.IsSchedulable())
+				require.True(t, svc.shouldFailoverGrokUpstreamError(http.StatusForbidden, tt.body))
+				if tt.headers != nil {
+					require.Equal(t, 3, repo.updateCalls, "quota telemetry must still be recorded")
+				}
+			})
+		}
+	}
+}
+
+func TestHandleGrokAccountUpstreamErrorGeneric403PreservesExistingPause(t *testing.T) {
+	for _, remaining := range []time.Duration{5 * time.Minute, time.Hour} {
+		t.Run(remaining.String(), func(t *testing.T) {
+			repo := &grokQuotaAccountRepo{}
+			svc := &OpenAIGatewayService{accountRepo: repo}
+			until := time.Now().Add(remaining)
+			account := &Account{
+				ID: 616, Platform: PlatformGrok, Type: AccountTypeOAuth,
+				Status: StatusActive, Schedulable: false,
+				TempUnschedulableUntil:  &until,
+				TempUnschedulableReason: "existing administrator rule",
+			}
+			svc.BlockAccountScheduling(account, until, account.TempUnschedulableReason)
+			generation := svc.openaiAccountRuntimeBlockSequence.Load()
+
+			svc.handleGrokAccountUpstreamError(context.Background(), account, http.StatusForbidden, nil, nil)
+
+			require.Zero(t, repo.tempUnschedCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.Equal(t, until, *account.TempUnschedulableUntil)
+			require.Equal(t, "existing administrator rule", account.TempUnschedulableReason)
+			require.Equal(t, generation, svc.openaiAccountRuntimeBlockSequence.Load())
+			runtimeUntil, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+			require.True(t, ok)
+			require.Equal(t, until, runtimeUntil)
+			require.False(t, account.Schedulable)
+			require.False(t, account.IsSchedulable())
+		})
+	}
+}
+
 func TestHandleGrokAccountUpstreamErrorSpendingLimit403RateLimits(t *testing.T) {
 	account := &Account{ID: 614, Platform: PlatformGrok, Type: AccountTypeOAuth}
 	repo := &grokQuotaAccountRepo{}
@@ -3101,6 +3177,28 @@ func TestHandleGrokAccountUpstreamErrorSpendingLimit403RateLimits(t *testing.T) 
 	require.WithinDuration(t, before.Add(grokSpendingLimitProbeCooldown), repo.lastRateLimitResetAt, 2*time.Second)
 	require.Zero(t, repo.tempUnschedCalls)
 	require.True(t, isGrokSpendingLimitError(body))
+}
+
+func TestHandleGrokAccountUpstreamErrorGeneric403RetainsExplicitQuotaLimit(t *testing.T) {
+	account := &Account{ID: 617, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	repo := &grokQuotaAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	before := time.Now()
+	headers := http.Header{
+		"X-Ratelimit-Limit-Requests":     []string{"100"},
+		"X-Ratelimit-Remaining-Requests": []string{"0"},
+		"Retry-After":                    []string{"45"},
+	}
+
+	svc.handleGrokAccountUpstreamError(
+		context.Background(), account, http.StatusForbidden, headers,
+		[]byte(`{"error":{"message":"Forbidden"}}`),
+	)
+
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.WithinDuration(t, before.Add(45*time.Second), repo.lastRateLimitResetAt, time.Second)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Zero(t, repo.tempUnschedCalls)
 }
 
 func TestHandleGrokAccountUpstreamError5xxRespectsPoolMode(t *testing.T) {
